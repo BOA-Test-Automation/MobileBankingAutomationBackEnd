@@ -56,13 +56,6 @@ class TestSuite(models.Model):
     def __str__(self):
         return self.name
 
-class RecordParserservice(models.Model):
-    record = models.TextField(blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return self.record
 
 class Parser(models.Model):
 
@@ -146,35 +139,21 @@ class TestCase(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-class TestStepFake(models.Model):
-    testecase = models.ForeignKey(TestCase, related_name='steps', on_delete=models.CASCADE, blank=True, null=True)
-    step_order = models.PositiveIntegerField()
-    identifier_type = models.CharField(max_length=100)
-    element_id = models.TextField()
-    action = models.CharField(max_length=50)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+# class TestStepFake(models.Model):
+#     record = models.ForeignKey(Parser, related_name='parser', on_delete=models.CASCADE, blank=True, null=True)
+#     step_order = models.PositiveIntegerField()
+#     identifier_type = models.CharField(max_length=100)
+#     element_id = models.TextField()
+#     action = models.CharField(max_length=50)
+#     created_at = models.DateTimeField(auto_now_add=True)
+#     updated_at = models.DateTimeField(auto_now=True)
 
-    class Meta:
-        ordering = ['step_order']
+#     class Meta:
+#         ordering = ['step_order']
 
-    def __str__(self):
-        return f"Step {self.step_order} for TestCase {self.testecase.id}"
+#     def __str__(self):
+#         return f"Step {self.step_order} for TestCase {self.testcase.id}"
 
-class TestStepTest(models.Model):
-    testecase = models.ForeignKey(TestCase, related_name='stepstest', on_delete=models.CASCADE, blank=True, null=True)
-    step_order = models.PositiveIntegerField()
-    identifier_type = models.CharField(max_length=100)
-    element_id = models.TextField()
-    action = models.CharField(max_length=50)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['step_order']
-
-    def __str__(self):
-        return f"Step {self.step_order} for TestCase {self.testecase.id}"
 
 
 class ElementIdentifierType(models.Model):
@@ -187,6 +166,31 @@ class ElementIdentifierType(models.Model):
     name = models.CharField(max_length=20, choices=IDENTIFIER_TYPES, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+class TestStepTest(models.Model):
+    testcase = models.ForeignKey(TestCase, related_name='stepstest', on_delete=models.CASCADE, blank=True, null=True)
+    step_order = models.PositiveIntegerField()
+    # identifier_type = models.CharField(max_length=100)
+    element_identifier_type = models.ForeignKey(
+        ElementIdentifierType, 
+        on_delete=models.PROTECT,
+        related_name='test_steps',
+        null=True, blank=True, default=None
+    )
+    element_id = models.TextField()
+    action = models.CharField(max_length=50)
+    input_type = models.CharField(max_length=100, null=True, blank=True, default=None)  # e.g., dynamic or static
+    parameter_name = models.CharField(max_length=100, null=True, blank=True, default=None)  # e.g., "Phone Number"
+    input_field_type = models.CharField(max_length=50, null=True, blank=True, default='text') 
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['step_order']
+
+    def __str__(self):
+        return f"Step {self.step_order} for TestCase {self.testcase.id}"
+
 
 class TestStep(models.Model):
     ACTION_CHOICES = [

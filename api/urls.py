@@ -7,6 +7,10 @@ from rest_framework_simplejwt.views import (
 )
 
 urlpatterns = [
-    path('api/testcases/', TestCaseListView.as_view(), name='testcase-list'),
-    path('api/parsesteps/', ParseStepsAPIView.as_view(), name='parse-steps'),
+    path('parsesteps/', ParseStepsAPIView.as_view(), name='parse-steps'),
 ]
+
+router = DefaultRouter()
+router.register('testcases', TestCaseListView, basename='testcase-list')
+
+urlpatterns += router.urls

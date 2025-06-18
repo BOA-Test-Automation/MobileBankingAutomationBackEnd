@@ -1,6 +1,6 @@
 from django.contrib import admin
 from .models import Parser
-from .models import TestStepFake
+# from .models import TestStepFake
 from .models import * 
 
 admin.site.register(User)
@@ -19,7 +19,7 @@ admin.site.register(Device)
 admin.site.register(TestExecution)
 admin.site.register(StepResult)
 admin.site.register(UIComparator)
-admin.site.register(TestStepFake)
+admin.site.register(TestStepTest)
 
 @admin.register(Parser)
 class ParserAdmin(admin.ModelAdmin):
