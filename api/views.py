@@ -71,7 +71,7 @@ class ParseStepsAPIView(APIView):
         # Clear existing steps
         # TestStepTest.objects.filter(testecase=testcase).delete()
 
-        if TestStepTest.objects.filter(testcase=testcase).exists():
+        if TestStep.objects.filter(testcase=testcase).exists():
             return Response(
                 {"error": f"TestCase '{testcase.name}' already has test steps. Editing is not yet supported. Please choose a different test case."},
                 status=409)
@@ -105,7 +105,7 @@ class ParseStepsAPIView(APIView):
                     'CLASS_NAME': 'CLASS_NAME',
                     'ID': 'ID',
                     'XPATH': 'XPATH',
-                    # Add other mappings if needed
+                    'ACCESSIBILITY_ID': 'ACCESSIBILITY_ID'
                 }
 
                 try:
@@ -141,7 +141,7 @@ class ParseStepsAPIView(APIView):
                     parsed_steps.append(step_data)
 
         for i, step in enumerate(parsed_steps, 1):
-            TestStepTest.objects.create(
+            TestStep.objects.create(
                 testcase=testcase,
                 step_order=i,
                 element_identifier_type=step["element_identifier_type"],

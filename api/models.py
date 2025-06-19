@@ -209,21 +209,26 @@ class TestStep(models.Model):
         ('select', 'Select'),
     ]
     
-    test_case = models.ForeignKey(TestCase, on_delete=models.CASCADE)
+    testcase = models.ForeignKey(TestCase, on_delete=models.CASCADE)
     step_order = models.PositiveIntegerField()
     action = models.CharField(max_length=10, choices=ACTION_CHOICES)
-    element_identifier_type = models.ForeignKey(ElementIdentifierType, on_delete=models.PROTECT)
-    elementID = models.TextField()
-    input_type = models.CharField(max_length=10, choices=INPUT_TYPE_CHOICES, default='static')
-    parameter_name = models.CharField(max_length=255, blank=True, null=True)
-    input_field_type = models.CharField(max_length=10, choices=INPUT_FIELD_TYPE_CHOICES, default='text')
+    element_identifier_type = models.ForeignKey(
+        ElementIdentifierType, 
+        on_delete=models.PROTECT,
+        related_name='test_step',
+        null=True, blank=True, default=None
+    )
+    element_id = models.TextField()
+    input_type = models.CharField(max_length=100, null=True, blank=True, default=None)  # e.g., dynamic or static
+    parameter_name = models.CharField(max_length=100, null=True, blank=True, default=None)  # e.g., "Phone Number"
+    input_field_type = models.CharField(max_length=50, null=True, blank=True, default='text') 
     element_screenshot = models.CharField(max_length=255, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['step_order']
-        unique_together = ('test_case', 'step_order')
+        unique_together = ('testcase', 'step_order')
 
 class TestAssignment(models.Model):
     test_case = models.ForeignKey(TestCase, on_delete=models.CASCADE)
