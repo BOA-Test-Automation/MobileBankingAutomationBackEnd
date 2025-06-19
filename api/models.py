@@ -57,77 +57,6 @@ class TestSuite(models.Model):
         return self.name
 
 
-class Parser(models.Model):
-
-    name = models.CharField(max_length=255, default="New Test Record")
-    row_record = models.TextField('Appium Record', help_text="Paste your Appium inspector record here", blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-
-    def __str__(self):
-        return f"Record: {self.name} (ID: {self.id})"
-
-
-    def parse_steps(self):
-        steps = []
-        if not self.row_record:
-            return steps
-
-        element_lines = self.row_record.splitlines()
-        temp_elements = {}
-
-        element_pattern = re.compile(
-            r'(?P<el>el\d+)\s*=\s*driver\.find_element\(by=AppiumBy\.(?P<identifier>[A-Z_]+),\s*value="(?P<value>(?:\\.|[^"\\])*)"\)'
-        )
-
-        action_pattern = re.compile(
-            r'(?P<el>el\d+)\.(?P<action>click|send_keys|swipe)\(?("?[^"]*"?\)?)?'
-        )
-
-        for line in element_lines:
-            line = line.strip()
-            element_match = element_pattern.search(line)
-            action_match = action_pattern.search(line)
-
-            if element_match:
-                el = element_match.group("el")
-                temp_elements[el] = {
-                    "element_id": element_match.group("value"),
-                    "identifier_type": element_match.group("identifier"),
-                }
-
-            if action_match:
-                el = action_match.group("el")
-                action = action_match.group("action")
-
-                if el in temp_elements:
-                    steps.append({
-                        "element_id": temp_elements[el]["element_id"],
-                        "identifier_type": temp_elements[el]["identifier_type"],
-                        "action": action
-                    })
-                else:
-                    print(f"[⚠️ Warning] Action found but element '{el}' was not defined.")
-
-        print(steps)
-        return steps
-
-    def save(self, *args, **kwargs):
-
-        super().save(*args, **kwargs)
-        self.steps.all().delete()
-        parsed_steps = self.parse_steps()
-
-        for i, step_data in enumerate(parsed_steps, 1):
-            TestStepFake.objects.create(
-                record=self, 
-                step_order=i,
-                identifier_type=step_data.get("identifier_type"),
-                element_id=step_data.get("element_id"),
-                action=step_data.get("action"),
-            )
-
 
 class TestCase(models.Model):
     code = models.CharField(max_length=255)
@@ -170,7 +99,6 @@ class ElementIdentifierType(models.Model):
 class TestStepTest(models.Model):
     testcase = models.ForeignKey(TestCase, related_name='stepstest', on_delete=models.CASCADE, blank=True, null=True)
     step_order = models.PositiveIntegerField()
-    # identifier_type = models.CharField(max_length=100)
     element_identifier_type = models.ForeignKey(
         ElementIdentifierType, 
         on_delete=models.PROTECT,

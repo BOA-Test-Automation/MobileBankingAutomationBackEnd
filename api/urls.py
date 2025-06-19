@@ -8,6 +8,8 @@ from rest_framework_simplejwt.views import (
 
 urlpatterns = [
     path('parsesteps/', ParseStepsAPIView.as_view(), name='parse-steps'),
+    # path('rerundata/', RerunDataHandler.as_view(), name='rerundata-steps'),
+    path('rerundata/<int:testcase_id>/', RerunDataHandler.as_view(), name='rerundata-steps'),
 ]
 
 router = DefaultRouter()

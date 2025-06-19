@@ -12,49 +12,56 @@ from rest_framework.views import APIView
 from .models import *
 
 class TestCaseListView(viewsets.ViewSet):
-    # def get(self, request):
-    #     testcases = TestCase.objects.all()
-    #     serializer = TestCaseSerializer(testcases, many=True)
-    #     return Response(serializer.data)
-
+    
     permission_classes = [permissions.AllowAny]
-    testcases = TestCase.objects.all()
+    queryset = TestCase.objects.select_related('application', 'suite', 'created_by').all()
     serializer_class = TestCaseSerializer
 
-    def list(self, request):  #called in get request
-        testcases = TestCase.objects.all()
-        serializer = self.serializer_class(testcases, many=True)
+    def list(self, request):
+        serializer = self.serializer_class(self.queryset, many=True)
         return Response(serializer.data)
     
-    def create(self, request):  #called in post request
+    def create(self, request):
         serializer = self.serializer_class(data=request.data)
-        if serializer.is_valid(): 
-            serializer.save()
-            return Response(serializer.data)
-        else: 
-            return Response(serializer.errors, status=400)
+        if serializer.is_valid():
+            # Handle the created_by field automatically
+            serializer.save(created_by=request.user)
+            return Response(serializer.data, status=201)
+        return Response(serializer.errors, status=400)
 
     def retrieve(self, request, pk=None):
-        project = self.testcases.get(pk=pk)  #the pk of the query set must be the same as the parameter in the url
-        serializer = self.serializer_class(project)
-        return Response(serializer.data)
-
-    def update(self, request, pk=None): #called on put request
-        project = self.testcases.get(pk=pk)
-        serializer = self.serializer_class(project,data=request.data)
-        if serializer.is_valid(): 
-            serializer.save()
+        try:
+            testcase = self.queryset.get(pk=pk)
+            serializer = self.serializer_class(testcase)
             return Response(serializer.data)
-        else: 
-            return Response(serializer.errors, status=400)
+        except TestCase.DoesNotExist:
+            return Response({"error": "Test case not found"}, status=404)
 
-    def destroy(self, request, pk=None): #called on delete request
-        project = self.testcases.get(pk=pk)
-        project.delete()
-        return Response(status=204)
+    def update(self, request, pk=None):
+        try:
+            testcase = self.queryset.get(pk=pk)
+            serializer = self.serializer_class(testcase, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=400)
+        except TestCase.DoesNotExist:
+            return Response({"error": "Test case not found"}, status=404)
+
+    def destroy(self, request, pk=None):
+        try:
+            testcase = self.queryset.get(pk=pk)
+            testcase.delete()
+            return Response(status=204)
+        except TestCase.DoesNotExist:
+            return Response({"error": "Test case not found"}, status=404)
 
 
 class ParseStepsAPIView(APIView):
+
+    def clean_element_id(self, element_id):
+        """Remove escaped quotes from element IDs"""
+        return element_id.replace('\\"', '"')
 
     def post(self, request):
         testcase_id = request.data.get("testcase_id")
@@ -95,10 +102,14 @@ class ParseStepsAPIView(APIView):
             if element_match:
                 el = element_match.group("el")
                 identifier = element_match.group("identifier")
+
                 # temp_elements[el] = {
                 #     "element_id": element_match.group("value"),
                 #     "identifier_type": element_match.group("identifier"),
                 # }
+
+                raw_value = element_match.group("value")
+                cleaned_value = self.clean_element_id(raw_value)
 
                 identifier_map = {
                     'ANDROID_UIAUTOMATOR': 'ANDROID_UIAUTOMATOR',
@@ -119,7 +130,7 @@ class ParseStepsAPIView(APIView):
                     )
 
                 temp_elements[el] = {
-                    "element_id": element_match.group("value"),
+                    "element_id": cleaned_value,
                     "element_identifier_type": identifier_type,
                 }
 
@@ -149,8 +160,38 @@ class ParseStepsAPIView(APIView):
                 action=step["action"],
                 input_type=step.get("input_type"),
                 parameter_name=step.get("parameter_name"),
-                input_field_type=step.get("input_field_type"),
-
-            )
+                input_field_type=step.get("input_field_type"),)
 
         return Response({"message": f"{len(parsed_steps)} steps saved."}, status=201)
+
+class RerunDataHandler(APIView):
+    
+    def get(self, request, testcase_id):
+        # testcase_id = request.data.get("testcase_id")
+
+        if not testcase_id:
+            return Response({"error": "testcase_id is required in the URL."}, status=400)
+
+        try:
+            testcase = TestCase.objects.get(id=testcase_id)
+        except TestCase.DoesNotExist:
+            return Response({"error": "TestCase not found."}, status=404)
+
+        steps = TestStep.objects.filter(testcase=testcase).select_related("element_identifier_type").order_by("step_order")
+
+        data = []
+        for step in steps:
+            data.append({
+                "ID": step.id,
+                "Code": testcase.code,
+                "Name": testcase.name,
+                "ElementId": step.element_id,
+                "Action": step.action,
+                "ElementIdentifier": step.element_identifier_type.name if step.element_identifier_type else None
+            })
+        
+        return Response({
+            "data": data}, status=200)
+
+
+
