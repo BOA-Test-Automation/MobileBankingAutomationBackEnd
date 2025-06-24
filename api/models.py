@@ -72,7 +72,12 @@ class TestCase(models.Model):
     application = models.ForeignKey(Application, on_delete=models.CASCADE)
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
-    created_by = models.ForeignKey(User, on_delete=models.CASCADE)
+
+    def get_default_user():
+       return User.objects.filter(username='admin').first().id
+    
+    # or default=get_default_user
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE, blank=True, null=True, default=1)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
