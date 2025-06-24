@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import *
 
 
@@ -12,6 +13,33 @@ class TestSuiteSerializer(serializers.ModelSerializer):
         model = TestSuite
         fields = ['id', 'name', 'description']
 
+
+class UserSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True)
+
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'password', 'role', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+
+    def create(self, validated_data):
+        user = User.objects.create_user(
+            username=validated_data['username'],
+            email=validated_data.get('email', ''),
+            password=validated_data['password'],
+            role=validated_data['role'],
+        )
+        return user
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if password:
+            instance.set_password(password)
+        instance.save()
+        return instance
+    
 class TestCaseSerializer(serializers.ModelSerializer):
     application = ApplicationSerializer(read_only=True)
     suite = TestSuiteSerializer(read_only=True)
@@ -34,6 +62,20 @@ class TestStepTestSerializer(serializers.ModelSerializer):
         model = TestStepTest
         fields = ['id', 'action', 'name']
 
+
+class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        token["role"] = user.profile.role  # Assuming you have `Profile` with `role`
+        return token
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        data["role"] = self.user.profile.role  # Include in response
+        return data
+    
+
 class RerunStepSerializer(serializers.ModelSerializer):
 
     Code = serializers.CharField(source='testcase.code', read_only=True)
@@ -42,6 +84,7 @@ class RerunStepSerializer(serializers.ModelSerializer):
     Action = serializers.CharField(source='action', read_only=True)
     
     ElementIdentifier = serializers.CharField(source='element_identifier_type.name', read_only=True)
+    
 
     class Meta:
         model = TestStep

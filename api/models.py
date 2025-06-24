@@ -33,6 +33,9 @@ class User(AbstractUser):
         related_query_name='api_user',
     )
 
+    class Meta:
+        db_table = 'api_user'  
+
     def __str__(self):
         return self.username
 
