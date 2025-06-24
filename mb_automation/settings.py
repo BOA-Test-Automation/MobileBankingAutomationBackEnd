@@ -115,7 +115,7 @@ WSGI_APPLICATION = 'mb_automation.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'mb_automation',
+        'NAME': 'mb_automationupd',
         'USER': 'root',
         'PASSWORD': '',
         'HOST': 'localhost',

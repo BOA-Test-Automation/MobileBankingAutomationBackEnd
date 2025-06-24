@@ -40,7 +40,7 @@ class User(AbstractUser):
         return self.username
 
 class Application(models.Model):
-    name = models.CharField(max_length=255)
+    name = models.CharField(max_length=255, unique=True)
     created_by = models.ForeignKey(User, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -50,14 +50,19 @@ class Application(models.Model):
 
 class TestSuite(models.Model):
     application = models.ForeignKey(Application, on_delete=models.CASCADE)
-    name = models.CharField(max_length=255, unique=True)
+    name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     created_by = models.ForeignKey(User, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        unique_together = ('application', 'name')
+        verbose_name = 'Test Suite'
+        verbose_name_plural = 'Test Suites'
+
     def __str__(self):
-        return self.name
+        return f"{self.name} - {self.application.name}"
 
 
 
@@ -71,22 +76,8 @@ class TestCase(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-# class TestStepFake(models.Model):
-#     record = models.ForeignKey(Parser, related_name='parser', on_delete=models.CASCADE, blank=True, null=True)
-#     step_order = models.PositiveIntegerField()
-#     identifier_type = models.CharField(max_length=100)
-#     element_id = models.TextField()
-#     action = models.CharField(max_length=50)
-#     created_at = models.DateTimeField(auto_now_add=True)
-#     updated_at = models.DateTimeField(auto_now=True)
-
-#     class Meta:
-#         ordering = ['step_order']
-
-#     def __str__(self):
-#         return f"Step {self.step_order} for TestCase {self.testcase.id}"
-
-
+    class Meta:
+        unique_together = ('name', 'suite', 'application')
 
 class ElementIdentifierType(models.Model):
     IDENTIFIER_TYPES = [
@@ -94,6 +85,7 @@ class ElementIdentifierType(models.Model):
         ('CLASS_NAME', 'Class Name'),
         ('ID', 'ID'),
         ('XPATH', 'XPath'),
+        ("ACCESSIBILITY_ID", "ACCESSIBILITY ID")
     ]
     name = models.CharField(max_length=20, choices=IDENTIFIER_TYPES, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -110,6 +102,7 @@ class TestStepTest(models.Model):
     )
     element_id = models.TextField()
     action = models.CharField(max_length=50)
+    actual_input = models.CharField(max_length=250, null=True, blank=True, default=None)
     input_type = models.CharField(max_length=100, null=True, blank=True, default=None)  # e.g., dynamic or static
     parameter_name = models.CharField(max_length=100, null=True, blank=True, default=None)  # e.g., "Phone Number"
     input_field_type = models.CharField(max_length=50, null=True, blank=True, default='text') 
@@ -150,6 +143,7 @@ class TestStep(models.Model):
         null=True, blank=True, default=None
     )
     element_id = models.TextField()
+    actual_input = models.CharField(max_length=250, null=True, blank=True, default=None)
     input_type = models.CharField(max_length=100, null=True, blank=True, default=None)  # e.g., dynamic or static
     parameter_name = models.CharField(max_length=100, null=True, blank=True, default=None)  # e.g., "Phone Number"
     input_field_type = models.CharField(max_length=50, null=True, blank=True, default='text') 
@@ -190,12 +184,26 @@ class TestType(models.Model):
      updated_at = models.DateTimeField(auto_now=True)
 
 class BatchAssignment(models.Model):
+
+    STATUS_CHOICES = [
+        ('passed', 'Passed'),
+        ('failed', 'Failed'),
+        ('in_progress', 'In Progress'),
+        ('completed', 'Completed'),
+        ('skipped', 'Skipped'),
+    ]
+
     name = models.CharField(max_length=255)
     assigned_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='batch_assignments_made')
     assigned_to = models.ForeignKey(User, on_delete=models.CASCADE, related_name='batch_assignments_received')
     assignment_type = models.ForeignKey(TestType, on_delete=models.CASCADE)
-    suite = models.ForeignKey(TestSuite, on_delete=models.CASCADE)
+    testcase = models.ForeignKey(TestCase, on_delete=models.CASCADE, related_name='testcaseid', blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
     priority = models.CharField(max_length=10, choices=TestAssignment.PRIORITY_CHOICES, default='medium')
+    totaltestcases = models.IntegerField(blank=True, null=True)
+    completedtestcases = models.IntegerField(blank=True, null=True)
+    passedtestcases = models.IntegerField(blank=True, null=True)
     deadline = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -238,16 +246,18 @@ class TestExecution(models.Model):
         ('skipped', 'Skipped'),
     ]
     test_case = models.ForeignKey(TestCase, on_delete=models.CASCADE)
+    device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name='device', blank=True, null=True)
     executed_by = models.ForeignKey(User, on_delete=models.CASCADE)
-    executed_on = models.ForeignKey(Device, on_delete=models.SET_NULL, blank=True, null=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, blank=True, null=True)
+    executed_device = models.ForeignKey(Device, on_delete=models.SET_NULL, blank=True, null=True)
+    overallstatus = models.CharField(max_length=20, choices=STATUS_CHOICES, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
 class StepResult(models.Model):
     test_execution = models.ForeignKey(TestExecution, on_delete=models.CASCADE)
     test_step = models.ForeignKey(TestStep, on_delete=models.CASCADE)
-    actual_xpath = models.TextField(blank=True, null=True)
+    actual_id = models.TextField(blank=True, null=True)
+    actual_input = models.CharField(max_length=20, blank=True, null=True)
     actual_screenshot = models.TextField(blank=True, null=True)
     STATUS_CHOICES = [
         ('passed', 'Passed'),
@@ -255,9 +265,9 @@ class StepResult(models.Model):
         ('skipped', 'Skipped'),
     ]
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, blank=True, null=True)
-    start_time = models.DateTimeField(blank=True, null=True)
-    end_time = models.DateTimeField(blank=True, null=True)
     duration = models.IntegerField(blank=True, null=True)  # in seconds
+    test_start = models.DateTimeField(blank=True, null=True)
+    time_end = models.DateTimeField(blank=True, null=True)
     log_message = models.TextField(blank=True, null=True)
     error = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
