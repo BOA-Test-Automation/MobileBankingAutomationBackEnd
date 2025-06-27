@@ -11,7 +11,7 @@ class ApplicationSerializer(serializers.ModelSerializer):
 class TestSuiteSerializer(serializers.ModelSerializer):
     class Meta:
         model = TestSuite
-        fields = ['id', 'name', 'description']
+        fields = ['id', 'name', 'description', 'application_id']
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -89,3 +89,20 @@ class RerunStepSerializer(serializers.ModelSerializer):
     class Meta:
         model = TestStep
         fields = ['id', 'Code', 'Name', 'ElementId', 'Action', 'ElementIdentifier']
+
+
+
+# serializers.py
+class ApplicationWithSuitesSerializer(serializers.ModelSerializer):
+    suites = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Application
+        fields = ['id', 'name', 'created_at', 'updated_at', 'created_by', 'suites']
+        read_only_fields = ['created_by', 'created_at', 'updated_at']
+
+    def get_suites(self, obj):
+        suites = TestSuite.objects.filter(application=obj.id)
+        return TestSuiteSerializer(suites, many=True).data
+    
+

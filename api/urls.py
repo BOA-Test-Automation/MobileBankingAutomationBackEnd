@@ -28,5 +28,11 @@ router.register('testcases', TestCaseListView, basename='testcase-list')
 router.register('users', UserViewSet, basename='user')
 router.register('applications', ApplicationViewSet, basename='application')
 router.register('testsuites', TestSuiteViewSet, basename='testsuite')
+router.register('applications-with-suites', ApplicationWithSuitesViewSet, basename='application-with-suites')
 
 urlpatterns += router.urls
+
+
+# adb shell
+
+# dumpsys window displays | grep -E “mCurrentFocus

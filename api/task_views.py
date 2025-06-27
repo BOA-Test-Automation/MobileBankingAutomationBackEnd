@@ -24,11 +24,11 @@ class TaskAssignmentView(APIView):
         """
         test_case_id = request.data.get('test_case_id')
         tester_id = request.data.get('tester_id')
-        manager_id = request.data.get('manager_id', request.user.id)
+        manager_id = request.data.get('manager_id', request.user.id) # autenticated user with role manger
         notes = request.data.get('notes', '')
         priority = request.data.get('priority', 'medium')
         deadline = request.data.get('deadline')
-        assignment_status = 'pending'  # Renamed variable
+        assignment_status = 'pending'  
 
         # Validate required fields
         if not all([test_case_id, tester_id]):

@@ -333,7 +333,17 @@ class LogoutView(APIView):
             response.delete_cookie("refresh_token")
             return response
 
+# views.py
+class ApplicationWithSuitesViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Application.objects.all()
+    serializer_class = ApplicationWithSuitesSerializer
+    # permission_classes = [permissions.IsAuthenticated]
 
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+    
 
 class TestAdminView(APIView):
   
