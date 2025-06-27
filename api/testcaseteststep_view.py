@@ -199,7 +199,7 @@ class CreateTestCaseWithStepsAPIView(APIView):
                         step_data.update({
                             'input_field_type': 'dynamic' if action.get('dynamic', False) else 'static',
                             'parameter_name': action.get('label', ''),
-                            'input_type': action.get('sendKeysType', 'text'),
+                            'input_type': action.get('sendKeysType', 'static'),
                             'actual_input': params[2] if len(params) > 2 else None
                         })
                     
