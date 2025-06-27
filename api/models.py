@@ -67,7 +67,7 @@ class TestSuite(models.Model):
 
 
 class TestCase(models.Model):
-    code = models.CharField(max_length=255)
+    code = models.CharField(max_length=255, blank=True, null=True)
     suite = models.ForeignKey(TestSuite, on_delete=models.CASCADE)
     application = models.ForeignKey(Application, on_delete=models.CASCADE)
     name = models.CharField(max_length=255)

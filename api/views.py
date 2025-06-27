@@ -259,7 +259,7 @@ class RerunDataHandler(APIView):
         except TestCase.DoesNotExist:
             return Response({"error": "TestCase not found."}, status=404)
 
-        steps = TestStep.objects.filter(testcase=testcase).select_related("element_identifier_type").order_by("step_order")
+        steps = TestStepTest.objects.filter(testcase=testcase).select_related("element_identifier_type").order_by("step_order")
 
         data = []
         for step in steps:
@@ -270,11 +270,15 @@ class RerunDataHandler(APIView):
                 "Step_order": step.step_order,
                 "ElementId": step.element_id,
                 "Action": step.action,
-                "ElementIdentifier": step.element_identifier_type.name if step.element_identifier_type else None
+                "ElementIdentifier": step.element_identifier_type.name if step.element_identifier_type else None,
+                "InputType": step.input_type,
+                "LabelName": step.parameter_name,
+                "InputFieldType" : step.input_field_type,
+                "ActualInput" : step.actual_input,
             })
         
         return Response({
-            "data": data}, status=200)
+            "rerundata": data}, status=200)
 
 
 class CookieTokenObtainView(APIView):
