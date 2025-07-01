@@ -246,7 +246,7 @@ class RefreshAccessTokenView(APIView):
 
 class RerunDataHandler(APIView):
     
-    permission_classes = [IsAuthenticated] 
+    # permission_classes = [IsAuthenticated] 
 
     def get(self, request, testcase_id):
         # testcase_id = request.data.get("testcase_id")

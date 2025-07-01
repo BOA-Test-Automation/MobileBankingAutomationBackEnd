@@ -35,4 +35,4 @@ urlpatterns += router.urls
 
 # adb shell
 
-# dumpsys window displays | grep -E “mCurrentFocus
+# dumpsys window displays | grep -E “mCurrentFocus"
