@@ -17,7 +17,9 @@ from .permissions import IsAdmin, IsTester
 from django.views.decorators.csrf import csrf_exempt
 from django.db import IntegrityError
 from django.db.utils import DataError
+from django.utils import timezone
 from rest_framework.exceptions import ValidationError
+from django.shortcuts import get_object_or_404
 from .models import *
 
 
@@ -275,11 +277,11 @@ class RerunDataHandler(APIView):
                 "LabelName": step.parameter_name,
                 "InputFieldType" : step.input_field_type,
                 "ActualInput" : step.actual_input,
+                "TestCase_id" : step.testcase_id
             })
         
         return Response({
             "rerundata": data}, status=200)
-
 
 class CookieTokenObtainView(APIView):
     def post(self, request):
@@ -321,15 +323,12 @@ class Loginview(APIView):
             "refresh_token" : refresh_token
         })
     
-
-
 class CheckAuthView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         return Response({"message": "Authenticated"})
-    
-    
+       
 class LogoutView(APIView):
         def post(self, request):
             response = Response({"message": "Logged out successfully"})
@@ -337,7 +336,6 @@ class LogoutView(APIView):
             response.delete_cookie("refresh_token")
             return response
 
-# views.py
 class ApplicationWithSuitesViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Application.objects.all()
     serializer_class = ApplicationWithSuitesSerializer
@@ -348,10 +346,106 @@ class ApplicationWithSuitesViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
     
-
 class TestAdminView(APIView):
   
   permission_classes = [IsAuthenticated, IsAdmin]  
 
   def post(self, request):
       return Response({"message": "Hello Admin! 👋"})
+  
+class StartTestExecution(APIView):
+
+    # permission_classes = [IsAuthenticated, IsTester]
+
+    def post(self, request):
+        test_case_id = request.data.get("test_case_id")
+        assignment_id = request.data.get("assignment_id")
+        device_uuid = request.data.get("device_uuid")
+        device_name = request.data.get("device_name")
+        os_version = request.data.get("os_version")
+        platform = request.data.get("platform", "Android")  # Default to Android
+
+        if not all([test_case_id, device_uuid, assignment_id, os_version, platform]):
+            return Response(
+                {"error": "Requird fields are missing"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        test_case = get_object_or_404(TestCase, id=test_case_id)
+
+        # try:
+        #     test_case = TestCase.objects.get(id=test_case_id)
+        # except TestCase.DoesNotExist:
+        #     return Response(
+        #         {"error": "Test case not found"},
+        #         status=status.HTTP_404_NOT_FOUND
+        #     )
+
+        try:
+            device, created = Device.objects.get_or_create(
+                device_uuid=device_uuid,
+                defaults={
+                    'device_name' : device_name,
+                    'platform': platform,
+                    'os_version': os_version
+                }
+            )
+
+            test_execution = TestExecution.objects.create(
+                test_case=test_case,
+                executed_by=request.user,
+                executed_device=device,
+                overallstatus='in_progress'
+            )
+
+            if assignment_id:
+                try:
+                    assignment = TestAssignment.objects.get(
+                        id=assignment_id,
+                        assigned_to=request.user  
+                    )
+                    
+                    if not assignment.execution:
+                        assignment.execution = test_execution
+                        assignment.status = 'in_progress'
+                        assignment.save()
+                    else:
+                        print(f"TestAssignment {assignment_id} already has execution {assignment.execution.id}")
+                except TestAssignment.DoesNotExist:
+                        print(f"TestAssignment {assignment_id} not found or doesn't belong to user {request.user.id}")
+
+            response_data = {
+                "message": "Test execution initialized successfully",
+                "test_execution_id": test_execution.id,
+                "assignment_updated": bool(assignment_id),  
+                "device_id": device.id,
+                "device_created": created,
+                "status": "in_progress",
+                "timestamp": timezone.now().isoformat()
+            }
+
+            return Response(response_data, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            print(f"Failed to initialize test execution: {str(e)}")
+            return Response(
+                {"error": f"Failed to initialize test execution: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        #     response_data = {
+        #         "message": "Test execution initialized successfully",
+        #         "test_execution_id": test_execution.id,
+        #         "device_id": device.id,
+        #         "device_created": created,
+        #         "status": "in_progress",
+        #         "timestamp": timezone.now().isoformat()
+        #     }
+
+        #     return Response(response_data, status=status.HTTP_201_CREATED)
+
+        # except Exception as e:
+        #     return Response(
+        #         {"error": f"Failed to initialize test execution: {str(e)}"},
+        #         status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        #     )

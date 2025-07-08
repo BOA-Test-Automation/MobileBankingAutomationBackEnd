@@ -3,6 +3,8 @@ from .views import *
 from .testsuiteandapplication_view import *
 from rest_framework.routers import DefaultRouter
 from .views import Loginview, LogoutView
+from .test_results_views import *
+from .task_views import *
 from .testcaseteststep_view import *
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -19,6 +21,12 @@ urlpatterns = [
     path('logout', LogoutView.as_view(), name = "logout"),
     path("testadminroute/", TestAdminView.as_view(), name="test-admin"),
     path('token/refresh/', RefreshAccessTokenView.as_view(), name='token_refresh'),
+    path('assign-test/', TaskAssignmentView.as_view(), name='assign-test'),
+    path('my_assignments/', TesterAssignmentsView.as_view(), name='my-assignments'),
+    path('create_execution/', StartTestExecution.as_view(), name='start-test-execution'),
+    path('save_test_result/', SaveTestResultView.as_view(), name='save-test-result'),
+    path('test-results/<int:test_execution_id>/', TestResultsListView.as_view(), name='test-results-list'),
+    path('test-result/<int:result_id>/', TestResultDetailView.as_view(), name='test-result-detail'),
     path("checkauth/", CheckAuthView.as_view(), name="check_auth"),
     path("logout/", LogoutView.as_view(), name="logout"),
 ]

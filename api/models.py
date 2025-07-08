@@ -235,25 +235,24 @@ class CustomTestGroupTestCase(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
 class Device(models.Model):
+    device_uuid = models.CharField(max_length=255, blank=True, null=True)
     device_name = models.CharField(max_length=255)
     platform = models.CharField(max_length=255)
     os_version = models.CharField(max_length=255)
-    assigned_to = models.ForeignKey(User, on_delete=models.SET_NULL, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
 class TestExecution(models.Model):
     STATUS_CHOICES = [
-        ('passed', 'Passed'),
-        ('failed', 'Failed'),
-        ('in_progress', 'In Progress'),
+        ('passed', 'Completed_Passed'),
+        ('failed', 'Completed_Failed'),
+        ('in_progress', 'In_Progress'),
         ('completed', 'Completed'),
         ('skipped', 'Skipped'),
     ]
     test_case = models.ForeignKey(TestCase, on_delete=models.CASCADE)
-    device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name='device', blank=True, null=True)
     executed_by = models.ForeignKey(User, on_delete=models.CASCADE)
-    executed_device = models.ForeignKey(Device, on_delete=models.SET_NULL, blank=True, null=True)
+    executed_device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name='device', blank=True, null=True)
     overallstatus = models.CharField(max_length=20, choices=STATUS_CHOICES, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -271,7 +270,7 @@ class StepResult(models.Model):
     ]
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, blank=True, null=True)
     duration = models.IntegerField(blank=True, null=True)  # in seconds
-    test_start = models.DateTimeField(blank=True, null=True)
+    time_start = models.DateTimeField(blank=True, null=True)
     time_end = models.DateTimeField(blank=True, null=True)
     log_message = models.TextField(blank=True, null=True)
     error = models.TextField(blank=True, null=True)

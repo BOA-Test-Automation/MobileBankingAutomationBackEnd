@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework import status as http_status  # Renamed import to avoid conflict
 from rest_framework.permissions import IsAuthenticated
 from .models import TestAssignment, TestCase, User
-from .permissions import IsManager
+from .permissions import *
 from django.shortcuts import get_object_or_404
 
 class TaskAssignmentView(APIView):
@@ -24,7 +24,7 @@ class TaskAssignmentView(APIView):
         """
         test_case_id = request.data.get('test_case_id')
         tester_id = request.data.get('tester_id')
-        manager_id = request.data.get('manager_id', request.user.id) # autenticated user with role manger
+        manager_id = request.user.id # autenticated user with role manger
         notes = request.data.get('notes', '')
         priority = request.data.get('priority', 'medium')
         deadline = request.data.get('deadline')
@@ -84,7 +84,7 @@ class TaskAssignmentView(APIView):
             )
 
 class TesterAssignmentsView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTester]
 
     def get(self, request):
         """
