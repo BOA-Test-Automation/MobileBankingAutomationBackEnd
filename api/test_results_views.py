@@ -2,68 +2,111 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status as http_status
 from rest_framework.permissions import IsAuthenticated
-from .models import StepResult, TestExecution, TestStep,  Device, TestCase 
+from .models import *
 from django.shortcuts import get_object_or_404
 from django.shortcuts import get_object_or_404
 import json
 
 class SaveTestResultView(APIView):
+
+    """
+      {
+        "test_execution_id": 1,
+        "overall_status": "pass",
+        "step_results": [
+            {
+            "test_step_id": 229,
+            "actual_id": "cn.tydic.ethiopay:id/inputEditText",
+            "actual_input": null,
+            "status": "passed",
+            "duration": 1.23,
+            "time_start": "2023-05-20T10:00:00.000Z",
+            "time_end": "2023-05-20T10:00:01.230Z",
+            "log_message": "Step 1: click completed",
+            "error": null
+            },
+            {
+            "test_step_id": 230,
+            "actual_id": "new UiSelector().className('android.view.View').instance(3)",
+            "actual_input": "test@example.com",
+            "status": "passed",
+            "duration": 2.45,
+            "time_start": "2023-05-20T10:00:02.000Z",
+            "time_end": "2023-05-20T10:00:04.450Z",
+            "log_message": "Step 2: send_keys completed",
+            "error": null
+            },
+            {
+            "test_step_id": 231,
+            "actual_id": "new UiSelector().text('Payment')",
+            "actual_input": "secure123",
+            "status": "passed",
+            "duration": 1.87,
+            "time_start": "2023-05-20T10:00:05.000Z",
+            "time_end": "2023-05-20T10:00:06.870Z",
+            "log_message": "Step 3: send_keys completed",
+            "error": null
+            },
+            {
+            "test_step_id": 232,
+            "actual_id": "new UiSelector().className('android.Edit').instance(1)",
+            "actual_input": null,
+            "status": "pass",
+            "duration": 5.00,
+            "time_start": "2023-05-20T10:00:07.000Z",
+            "time_end": "2023-05-20T10:00:12.000Z",
+            "log_message": "CRITICAL: Element 'btnSubmit' not found",
+            "error": "Element 'btnSubmit' not found"
+            }
+        ]
+       }
+    """
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        """
-        Save multiple test step results and update test execution status
-        Expected POST data:
-        {
-            "test_execution_id": 1,
-            "overall_status": "passed",
-            "step_results": [
-                {
-                    "test_step_id": 5,
-                    "actual_id": "com.example:id/button",
-                    "actual_input": "test@example.com",
-                    "actual_screenshot": "base64encodedimage",
-                    "status": "passed",
-                    "duration": 5,
-                    "log_message": "Step completed successfully",
-                    "error": null
-                },
-                ...
-            ]
-        }
-        """
+    
         try:
             # Get test execution and update its status
             test_execution = get_object_or_404(TestExecution, id=request.data.get('test_execution_id'))
-            test_execution.overallstatus = request.data.get('overall_status', 'pending')
+            test_execution.overallstatus = request.data['overall_status']
             test_execution.save()
 
-            step_results_data = request.data.get('step_results', [])
+            step_results_data = request.data.get('step_results')
+            # print(step_results_data)
             created_results = []
+            step_results = []
             
             for step_data in step_results_data:
                 # Get test step
-                test_step = get_object_or_404(TestStep, id=step_data.get('test_step_id'))
+                test_step = get_object_or_404(TestStepTest, id=step_data.get('test_step_id'))
                 
-                # Create or update step result
+                print("Here1")
+
                 step_result, created = StepResult.objects.update_or_create(
                     test_execution=test_execution,
                     test_step=test_step,
                     defaults={
                         'actual_id': step_data.get('actual_id'),
                         'actual_input': step_data.get('actual_input'),
-                        'actual_screenshot': step_data.get('actual_screenshot'),
+                        # 'actual_screenshot': step_data.get('actual_screenshot'),
                         'status': step_data.get('status'),
                         'duration': step_data.get('duration'),
+                        'time_start': step_data.get('time_start'),
+                        'time_end': step_data.get('time_end'),
                         'log_message': step_data.get('log_message'),
                         'error': step_data.get('error'),
                     }
                 )
-                
+
                 created_results.append({
                     "result_id": step_result.id,
                     "test_step_id": test_step.id,
-                    "created": created
+                    "created": created,
+                    "status": step_result.status,
+                    "actual_id": step_result.actual_id,
+                    "actual_input": step_result.actual_input,
+                    "log_message": step_result.log_message,
+                    "error": step_result.error,
                 })
             
             return Response({
@@ -72,7 +115,7 @@ class SaveTestResultView(APIView):
                 "overall_status": test_execution.overallstatus,
                 "results": created_results,
                 "total_steps": len(created_results)
-            }, status=http_status.HTTP_201_CREATED)
+            }, status=200)
             
         except Exception as e:
             return Response(
@@ -80,6 +123,57 @@ class SaveTestResultView(APIView):
                 status=http_status.HTTP_400_BAD_REQUEST
             )
 
+# class AllTestResultsListView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     def get(self, request):
+#         """
+#         Get all step results for the tester
+#         """
+#         try:
+#             test_execution = get_object_or_404(TestExecution, id=test_execution_id)
+            
+#             # Verify the requesting user has permission (either assigned tester or manager)
+#             if request.user != test_execution.executed_by and request.user.role != 'manager':
+#                 return Response(
+#                     {"error": "You don't have permission to view these results"},
+#                     status=http_status.HTTP_403_FORBIDDEN
+#                 )
+            
+#             results = StepResult.objects.filter(
+#                 test_execution=test_execution
+#             ).select_related('test_step').order_by('test_step__step_order')
+
+#             data = []
+#             for result in results:
+#                 data.append({
+#                     "id": result.id,
+#                     "step_order": result.test_step.step_order,
+#                     "expected_action": result.test_step.action,
+#                     "expected_element": result.test_step.element_id,
+#                     "expected_input": result.test_step.actual_input,
+#                     "actual_id": result.actual_id,
+#                     "actual_input": result.actual_input,
+#                     "status": result.status,
+#                     "duration": result.duration,
+#                     "log_message": result.log_message,
+#                     "error": result.error,
+#                     "created_at": result.created_at
+#                 })
+
+#             return Response({
+#                 "test_execution_id": test_execution_id,
+#                 "overall_status": test_execution.overallstatus,
+#                 "results": data
+#             })
+            
+#         except Exception as e:
+#             return Response(
+#                 {"error": str(e)},
+#                 status=http_status.HTTP_400_BAD_REQUEST
+#             )
+        
+        
 class TestResultsListView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -108,7 +202,7 @@ class TestResultsListView(APIView):
                     "step_order": result.test_step.step_order,
                     "expected_action": result.test_step.action,
                     "expected_element": result.test_step.element_id,
-                    "expected_input": result.test_step.input,
+                    "expected_input": result.test_step.actual_input,
                     "actual_id": result.actual_id,
                     "actual_input": result.actual_input,
                     "status": result.status,
@@ -160,18 +254,18 @@ class TestResultDetailView(APIView):
                     "action": result.test_step.action,
                     "element_identifier": result.test_step.element_identifier_type.name if result.test_step.element_identifier_type else None,
                     "element_id": result.test_step.element_id,
-                    "input": result.test_step.input,
+                    "input": result.test_step.actual_input,
                     "input_type": result.test_step.input_type,
                     "parameter_name": result.test_step.parameter_name
                 },
                 "actual": {
                     "element_id": result.actual_id,
                     "input": result.actual_input,
-                    "screenshot": result.actual_screenshot
+                    # "screenshot": result.actual_screenshot
                 },
                 "status": result.status,
                 "duration": result.duration,
-                "start_time": result.test_start,
+                "start_time": result.time_start,
                 "end_time": result.time_end,
                 "log_message": result.log_message,
                 "error": result.error,

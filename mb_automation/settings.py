@@ -10,6 +10,7 @@ DEBUG = True
 ALLOWED_HOSTS = ['*']
 
 INSTALLED_APPS = [
+    'channels',
     'corsheaders',
     'django.contrib.admin',
     'django.contrib.auth',
@@ -21,6 +22,22 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
 ]
+
+ADB_PATH = 'C:\\Android\\platform-tools\\adb.exe'  # or your ADB path
+APPIUM_HOST = 'localhost'
+APPIUM_PORT = 4723
+APPIUM_DEFAULT_COMMAND_TIMEOUT = 60000
+
+ASGI_APPLICATION = 'mb_automation.asgi.application'
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("127.0.0.1", 6379)],  # Explicit IPv4 address
+        },
+    },
+}
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -49,9 +66,13 @@ SIMPLE_JWT = {
 #     "http://192.168.0.108:5173"
 # ]
 
+
 CORS_ALLOW_ALL_ORIGINS = True
 
 CORS_ALLOW_CREDENTIALS = True
+
+SOCKETIO_URL = 'socket.io'
+
 
 # Add these new CORS settings
 CORS_ALLOW_METHODS = [
@@ -93,6 +114,7 @@ MIDDLEWARE = [
 ROOT_URLCONF = 'mb_automation.urls'
 
 AUTH_USER_MODEL = 'api.User'
+
 
 TEMPLATES = [
     {

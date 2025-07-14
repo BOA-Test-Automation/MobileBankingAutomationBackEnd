@@ -259,7 +259,8 @@ class TestExecution(models.Model):
 
 class StepResult(models.Model):
     test_execution = models.ForeignKey(TestExecution, on_delete=models.CASCADE)
-    test_step = models.ForeignKey(TestStep, on_delete=models.CASCADE)
+    # test_step = models.ForeignKey(TestStep, on_delete=models.CASCADE)
+    test_step = models.ForeignKey(TestStepTest, on_delete=models.CASCADE)
     actual_id = models.TextField(blank=True, null=True)
     actual_input = models.CharField(max_length=20, blank=True, null=True)
     actual_screenshot = models.TextField(blank=True, null=True)
@@ -269,7 +270,7 @@ class StepResult(models.Model):
         ('skipped', 'Skipped'),
     ]
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, blank=True, null=True)
-    duration = models.IntegerField(blank=True, null=True)  # in seconds
+    duration = models.FloatField(blank=True, null=True)  # in seconds
     time_start = models.DateTimeField(blank=True, null=True)
     time_end = models.DateTimeField(blank=True, null=True)
     log_message = models.TextField(blank=True, null=True)

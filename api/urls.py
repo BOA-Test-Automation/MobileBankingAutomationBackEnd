@@ -10,6 +10,14 @@ from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
 )
+from .appiumview import (
+    get_devices, 
+    start_session, 
+    execute_step, 
+    end_session, 
+    session_info
+)
+from django.views.decorators.http import require_http_methods
 
 urlpatterns = [
     path('parsesteps/', ParseStepsAPIView.as_view(), name='parse-steps'),
@@ -29,7 +37,13 @@ urlpatterns = [
     path('test-result/<int:result_id>/', TestResultDetailView.as_view(), name='test-result-detail'),
     path("checkauth/", CheckAuthView.as_view(), name="check_auth"),
     path("logout/", LogoutView.as_view(), name="logout"),
+    path('api/devices/', get_devices, name='get_devices'),
+    path('api/start-session/', start_session, name='start_session'),
+    path('api/execute-step/', execute_step, name='execute_step'),
+    path('api/end-session/', end_session, name='end_session'),
+    path('api/session-info/', session_info, name='session_info'),
 ]
+
 
 router = DefaultRouter()
 router.register('testcases', TestCaseListView, basename='testcase-list')
@@ -39,7 +53,6 @@ router.register('testsuites', TestSuiteViewSet, basename='testsuite')
 router.register('applications-with-suites', ApplicationWithSuitesViewSet, basename='application-with-suites')
 
 urlpatterns += router.urls
-
 
 # adb shell
 

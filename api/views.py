@@ -355,6 +355,17 @@ class TestAdminView(APIView):
   
 class StartTestExecution(APIView):
 
+    """
+    {
+        "test_case_id": 65,
+        "assignment_id": 1,
+        "device_uuid": "R9ZR601C18H",
+        "device_name": "SM-A025F",
+        "os_version":"12",
+        "platform": "Android"
+      }  
+    """
+
     # permission_classes = [IsAuthenticated, IsTester]
 
     def post(self, request):
@@ -373,13 +384,8 @@ class StartTestExecution(APIView):
         
         test_case = get_object_or_404(TestCase, id=test_case_id)
 
-        # try:
-        #     test_case = TestCase.objects.get(id=test_case_id)
-        # except TestCase.DoesNotExist:
-        #     return Response(
-        #         {"error": "Test case not found"},
-        #         status=status.HTTP_404_NOT_FOUND
-        #     )
+        # assignment_table_id = get_object_or_404(TestAssignment, id=assignment_id)
+
 
         try:
             device, created = Device.objects.get_or_create(
