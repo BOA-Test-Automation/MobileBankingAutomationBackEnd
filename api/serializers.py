@@ -40,6 +40,28 @@ class UserSerializer(serializers.ModelSerializer):
         instance.save()
         return instance
     
+class TestAssignmentSerializer(serializers.ModelSerializer):
+    assigned_to = UserSerializer()
+    
+    class Meta:
+        model = TestAssignment
+        fields = ['id', 'assigned_to', 'status', 'priority', 'deadline']
+
+class TestCaseWithAssignmentsSerializer(serializers.ModelSerializer):
+    pending_assignments = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = TestCase
+        fields = ['id', 'code', 'name', 'description', 'pending_assignments']
+    
+    def get_pending_assignments(self, obj):
+        # Get pending assignments for this test case
+        assignments = TestAssignment.objects.filter(
+            test_case=obj,
+            status='pending'
+        ).select_related('assigned_to')
+        return TestAssignmentSerializer(assignments, many=True).data
+    
 class TestCaseSerializer(serializers.ModelSerializer):
     application = ApplicationSerializer(read_only=True)
     suite = TestSuiteSerializer(read_only=True)

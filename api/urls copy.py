@@ -18,8 +18,6 @@ from .appiumview import (
     session_info
 )
 from django.views.decorators.http import require_http_methods
-from .suite_application_views import *  # Added import
-
 
 urlpatterns = [
     path('parsesteps/', ParseStepsAPIView.as_view(), name='parse-steps'),
@@ -40,7 +38,6 @@ urlpatterns = [
     path('save_test_result/', SaveTestResultView.as_view(), name='save-test-result'),
     path('test-results/<int:test_execution_id>/', TestResultsListView.as_view(), name='test-results-list'),
     path('test-result/<int:result_id>/', TestResultDetailView.as_view(), name='test-result-detail'),
-    path('get-my-testresults/', TesterAssignedTestsView.as_view(), name='tester-test-results'),
     path('testsuitetestcase/<int:suite_id>/', TestSuiteResultView.as_view(), name='test-suite-testcase'),
     path("checkauth/", CheckAuthView.as_view(), name="check_auth"),
     path("logout/", LogoutView.as_view(), name="logout"),
@@ -49,18 +46,9 @@ urlpatterns = [
     path('api/execute-step/', execute_step, name='execute_step'),
     path('api/end-session/', end_session, name='end_session'),
     path('api/session-info/', session_info, name='session_info'),
-    path('getapptestcase/<int:application_id>/', TestcaseApplicationViewSet.as_view(), name='application'),
-    path('getSuiteApplications/<int:application_id>/', SuiteApplicationsView.as_view(), name='suite-applications'),
-    path('setCustomGroup/', SetCustomGroupView.as_view({'post': 'post'}), name='set-custom-group'), 
-    path('getUserCustomGroups/', SetCustomGroupView.as_view({'get': 'get_user_custom_groups'}), name='user-custom-groups'),
-    path('getCustomGroupTestCases/<int:group_id>/', SetCustomGroupView.as_view({'get': 'get_custom_group_test_cases'}), name='custom-group-test-cases'),
-    path('get_edit_custom_group_data/<int:group_id>/', SetCustomGroupView.as_view({'get': 'get_edit_custom_group_data'}), name='get-edit-custom-group-test-cases'),
-    path('update_custom_group/<int:group_id>/', SetCustomGroupView.as_view({'put': 'update_custom_group'}), name='edit-custom-group-test-cases'),
-    path('assignbatchtest/', AssignBatchToTesterView.as_view(), name='custom-group-test-cases'),
-    path('getmyassignedbatchtests/', TesterAssignedBatchTestsView.as_view(), name='tester-assigned-batch-tests'),
-    path('getbatchtestcases/<int:batch_id>/', BatchTestCasesView.as_view(), name='batch-test-cases'),
-    path('getcustomgrouptype/', GetCustomGroupTypeView.as_view(), name='set-custom-group'), 
+    path('getapptestcase/<int:application_id>/', TestcaseApplicationViewSet.as_view(), name='application')
 ]
+
 
 router = DefaultRouter()
 router.register('testcases', TestCaseListView, basename='testcase-list')

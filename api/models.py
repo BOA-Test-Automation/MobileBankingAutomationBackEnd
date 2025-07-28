@@ -97,6 +97,23 @@ class ElementIdentifierType(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
 class TestStepTest(models.Model):
+
+    ACTION_CHOICES = [
+        ('click', 'Click'),
+        ('swap', 'Swap'),
+        ('send_keys', 'Send Keys'),
+    ]
+    INPUT_TYPE_CHOICES = [
+        ('static', 'Static'),
+        ('dynamic', 'Dynamic'),
+    ]
+    INPUT_FIELD_TYPE_CHOICES = [
+        ('password', 'Password'),
+        ('number', 'Number'),
+        ('text', 'Text'),
+        ('select', 'Select'),
+    ]
+
     testcase = models.ForeignKey(TestCase, related_name='stepstest', on_delete=models.CASCADE, blank=True, null=True)
     step_order = models.PositiveIntegerField()
     element_identifier_type = models.ForeignKey(
@@ -106,11 +123,12 @@ class TestStepTest(models.Model):
         null=True, blank=True, default=None
     )
     element_id = models.TextField()
-    action = models.CharField(max_length=50)
+    action = models.CharField(max_length=10, choices=ACTION_CHOICES)
     actual_input = models.CharField(max_length=250, null=True, blank=True, default=None)
     input_type = models.CharField(max_length=100, null=True, blank=True, default=None)  # e.g., dynamic or static
     parameter_name = models.CharField(max_length=100, null=True, blank=True, default=None)  # e.g., "Phone Number"
-    input_field_type = models.CharField(max_length=50, null=True, blank=True, default='text') 
+    input_field_type = models.CharField(max_length=50, null=True, blank=True, default='static')
+    element_screenshots = models.CharField(max_length=255, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -160,16 +178,41 @@ class TestStep(models.Model):
         ordering = ['step_order']
         unique_together = ('testcase', 'step_order')
 
+class Device(models.Model):
+    device_uuid = models.CharField(max_length=255, blank=True, null=True)
+    device_name = models.CharField(max_length=255)
+    platform = models.CharField(max_length=255)
+    os_version = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+class TestExecution(models.Model):
+    STATUS_CHOICES = [
+        ('passed', 'Completed_Passed'),
+        ('failed', 'Completed_Failed'),
+        ('in_progress', 'In_Progress'),
+        ('completed', 'Completed'),
+        ('skipped', 'Skipped'),
+    ]
+    test_case = models.ForeignKey(TestCase, on_delete=models.CASCADE)
+    batch = models.ForeignKey('BatchAssignment', on_delete=models.CASCADE, related_name='assigned_objects', blank=True, null=True)
+    executed_by = models.ForeignKey(User, on_delete=models.CASCADE)
+    executed_device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name='device', blank=True, null=True)
+    overallstatus = models.CharField(max_length=20, choices=STATUS_CHOICES, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
 class TestAssignment(models.Model):
     test_case = models.ForeignKey(TestCase, on_delete=models.CASCADE)
     assigned_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='test_assignments_made' )
     assigned_to = models.ForeignKey(User, on_delete=models.CASCADE,  related_name='test_assignments_received')
-    execution = models.ForeignKey('TestExecution', on_delete=models.SET_NULL, blank=True, null=True)
+    execution = models.ForeignKey(TestExecution, on_delete=models.SET_NULL, blank=True, null=True)
     batch = models.ForeignKey('BatchAssignment', on_delete=models.SET_NULL, blank=True, null=True)
     STATUS_CHOICES = [
         ('pending', 'Pending'),
         ('in_progress', 'In Progress'),
-        ('completed', 'Completed'),
+        ('completed_pass', 'Completed_Pass'),
+        ('completed_fail', 'Completed_Fail')
     ]
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     notes = models.TextField(blank=True, null=True)
@@ -188,6 +231,21 @@ class TestType(models.Model):
      created_at = models.DateTimeField(auto_now_add=True)
      updated_at = models.DateTimeField(auto_now=True)
 
+class CustomTestGroup(models.Model):
+    name = models.CharField(max_length=255, default=None)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE,  related_name='application_id', default=None)
+    description = models.CharField(max_length=255)
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+class CustomTestGroupItems(models.Model):
+    custom_group = models.ForeignKey(CustomTestGroup, on_delete=models.CASCADE)
+    test_case = models.ForeignKey(TestCase, on_delete=models.CASCADE)
+    order_ingroup =models.IntegerField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
 class BatchAssignment(models.Model):
 
     STATUS_CHOICES = [
@@ -202,7 +260,7 @@ class BatchAssignment(models.Model):
     assigned_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='batch_assignments_made')
     assigned_to = models.ForeignKey(User, on_delete=models.CASCADE, related_name='batch_assignments_received')
     assignment_type = models.ForeignKey(TestType, on_delete=models.CASCADE)
-    testcase = models.ForeignKey(TestCase, on_delete=models.CASCADE, related_name='testcaseid', blank=True, null=True)
+    customgroup = models.ForeignKey(CustomTestGroup, on_delete=models.CASCADE, related_name='customgroupid', blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
     priority = models.CharField(max_length=10, choices=TestAssignment.PRIORITY_CHOICES, default='medium')
@@ -213,49 +271,14 @@ class BatchAssignment(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+
 class BatchAssignmentTestCase(models.Model):
     batch = models.ForeignKey(BatchAssignment, on_delete=models.CASCADE)
     test_case = models.ForeignKey(TestCase, on_delete=models.CASCADE)
+    execution = models.ForeignKey(TestExecution, on_delete=models.CASCADE, related_name='execution', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-class CustomTestGroup(models.Model):
-    name = models.CharField(max_length=255)
-    description = models.CharField(max_length=255)
-    created_by = models.ForeignKey(User, on_delete=models.CASCADE)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-class CustomTestGroupTestCase(models.Model):
-    group = models.ForeignKey(CustomTestGroup, on_delete=models.CASCADE)
-    test_case = models.ForeignKey(TestCase, on_delete=models.CASCADE)
-    start_time = models.DateTimeField(blank=True, null=True)
-    end_time = models.DateTimeField(blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-class Device(models.Model):
-    device_uuid = models.CharField(max_length=255, blank=True, null=True)
-    device_name = models.CharField(max_length=255)
-    platform = models.CharField(max_length=255)
-    os_version = models.CharField(max_length=255)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-class TestExecution(models.Model):
-    STATUS_CHOICES = [
-        ('passed', 'Completed_Passed'),
-        ('failed', 'Completed_Failed'),
-        ('in_progress', 'In_Progress'),
-        ('completed', 'Completed'),
-        ('skipped', 'Skipped'),
-    ]
-    test_case = models.ForeignKey(TestCase, on_delete=models.CASCADE)
-    executed_by = models.ForeignKey(User, on_delete=models.CASCADE)
-    executed_device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name='device', blank=True, null=True)
-    overallstatus = models.CharField(max_length=20, choices=STATUS_CHOICES, blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
 class StepResult(models.Model):
     test_execution = models.ForeignKey(TestExecution, on_delete=models.CASCADE)

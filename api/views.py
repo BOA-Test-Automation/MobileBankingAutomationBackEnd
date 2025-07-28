@@ -20,23 +20,85 @@ from django.db.utils import DataError
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
+from rest_framework_simplejwt.state import token_backend
+import jwt
+from jwt import ExpiredSignatureError
 from .models import *
 
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all().order_by('-created_at')
     serializer_class = UserSerializer
-    # permission_classes = [IsAuthenticated]  # Optional: Add role permission if needed
+    permission_classes = [IsAuthenticated]  # Optional: Add role permission if needed
 
     def destroy(self, request, *args, **kwargs):
         user = self.get_object()
         if user.username == 'superadmin':
             return Response({"error": "Cannot delete superadmin"}, status=403)
         return super().destroy(request, *args, **kwargs)
+    
+
+class TestcaseApplicationViewSet(APIView):
+    # permission_classes = [IsAuthenticated]  # Uncomment if needed
+
+    def get(self, request, application_id):
+        try:
+            testcases = TestCase.objects.filter(application_id=application_id)
+            serializer = TestCaseSerializer(testcases, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    # def post(self, request, application_id):
+    #     serializer = TestCaseSerializer(data=request.data)
+    #     if serializer.is_valid():
+    #         serializer.save(
+    #             created_by=request.user,
+    #             application_id=application_id
+    #         )
+    #         return Response(serializer.data, status=status.HTTP_201_CREATED)
+    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class TestSuiteResultView(APIView):
+    # permission_classes = [permissions.IsAuthenticated]  # Uncomment if needed
+
+    def get(self, request, suite_id):
+        try:
+            # Verify test suite exists
+            testcase = TestSuite.objects.get(id=suite_id)
+            
+            # Get all test cases for this suite with pending assignments
+            testcases = TestCase.objects.filter(
+                suite_id=suite_id
+            ).prefetch_related('testassignment_set')
+            
+            serializer = TestCaseWithAssignmentsSerializer(testcases, many=True)
+            
+            return Response({
+                'suite_id': suite_id,
+                'suite_name' :testcase.name,
+                'count': testcases.count(),
+                'testcases': serializer.data
+            }, status=status.HTTP_200_OK)
+            
+        except TestSuite.DoesNotExist:
+            return Response(
+                {'error': f'Test Suite with ID {suite_id} does not exist'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
 
 class TestCaseListView(viewsets.ViewSet):
 
-    permission_classes = [IsAuthenticated, IsAdmin]  
+    permission_classes = [IsAuthenticated]  
     queryset = TestCase.objects.select_related('application', 'suite', 'created_by').all()
     serializer_class = TestCaseSerializer
     
@@ -44,15 +106,7 @@ class TestCaseListView(viewsets.ViewSet):
         serializer = self.serializer_class(self.queryset, many=True)
         return Response(serializer.data)
     
-    # def create(self, request):
-    #     serializer = self.serializer_class(data=request.data)
-    #     if serializer.is_valid():
-    #         # Handle the created_by field automatically
-    #         serializer.save(created_by=request.user)
-    #         return Response(serializer.data, status=200)
-    #     return Response(serializer.errors, status=400)
     
-
     def create(self, request):
         serializer = self.serializer_class(data=request.data)
         if serializer.is_valid():
@@ -81,18 +135,6 @@ class TestCaseListView(viewsets.ViewSet):
             return Response(serializer.data)
         except TestCase.DoesNotExist:
             return Response({"error": "Test case not found"}, status=404)
-
-    # def update(self, request, pk=None):
-    #     print("Hello")
-    #     try:
-    #         testcase = self.queryset.get(pk=pk)
-    #         serializer = self.serializer_class(testcase, data=request.data, partial=True)
-    #         if serializer.is_valid():
-    #             serializer.save()
-    #             return Response(serializer.data)
-    #         return Response(serializer.errors, status=400)
-    #     except TestCase.DoesNotExist:
-    #         return Response({"error": "Test case not found"}, status=404)
 
 
     def update(self, request, pk=None):
@@ -243,12 +285,75 @@ class RefreshAccessTokenView(APIView):
             return Response({"error": "Invalid refresh token"}, status=401)
 
         response = Response({"message": "Access refreshed"})
-        response.set_cookie("access_token", new_access, httponly=True, samesite="Lax")
+        # response.set_cookie("access_token", new_access, httponly=True, samesite="None")
+        response.set_cookie(
+                key='access_token',
+                value=str(new_access),
+                httponly=True,
+                samesite="None",
+                secure=True,
+                max_age=24 * 3600,
+                domain=None, # For local development
+            )
         return response
+
+class RefreshAccessTokenViewBearer(APIView):
+    def post(self, request):
+        refresh_token = request.data.get('refresh')
+        
+        if not refresh_token:
+            return Response(
+                {"error": "Refresh token is required", "logout_required": True},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        try:
+            # First verify the token structure
+            RefreshToken(refresh_token)
+            
+            token_backend.decode(refresh_token, verify=True)
+            
+            # If we get here, token is valid
+            refresh = RefreshToken(refresh_token)
+            new_access = str(refresh.access_token)
+            
+            return Response({"access": new_access})
+            
+        except ExpiredSignatureError:
+            # Specific case for expired token
+            return Response(
+                {
+                    "error": "Refresh token expired", 
+                    "logout_required": True,
+                    "detail": "Please login again"
+                },
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        except TokenError as e:
+            # Other token errors (invalid, malformed, etc.)
+            return Response(
+                {
+                    "error": "Invalid refresh token",
+                    "logout_required": True,
+                    "detail": str(e)
+                },
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        except Exception as e:
+            # Catch any other unexpected errors
+            return Response(
+                {
+                    "error": "Token verification failed",
+                    "logout_required": True,
+                    "detail": str(e)
+                },
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        
 
 class RerunDataHandler(APIView):
     
-    # permission_classes = [IsAuthenticated] 
+    permission_classes = [IsAuthenticated] 
 
     def get(self, request, testcase_id):
         # testcase_id = request.data.get("testcase_id")
@@ -282,8 +387,9 @@ class RerunDataHandler(APIView):
         
         return Response({
             "rerundata": data}, status=200)
-
+    
 class CookieTokenObtainView(APIView):
+    # permission_classes = [IsAuthenticated] 
     def post(self, request):
         username = request.data.get("username")
         password = request.data.get("password")
@@ -295,11 +401,96 @@ class CookieTokenObtainView(APIView):
         refresh = RefreshToken.for_user(user)
         response = Response({
             "role": user.role,
-            "username": user.username
+            "username": user.username,
+            "message": "Login successful"
         })
-        response.set_cookie("access_token", str(refresh.access_token), httponly=True, samesite="Lax")
-        response.set_cookie("refresh_token", str(refresh), httponly=True, samesite="Lax")
+
+        response.set_cookie(
+            key='access_token',
+            value=str(refresh.access_token),
+            httponly=True,
+            samesite="None",
+            secure=True,
+            max_age=24 * 3600,
+            domain=None, # For local development
+        )
+        response.set_cookie(
+            key='refresh_token',
+            value=str(refresh),
+            httponly=True,
+            samesite="None",
+            secure=True,
+            max_age=7 * 24 * 3600,
+            domain=None,
+        )
+        # response.set_cookie("access_token", str(refresh.access_token), httponly=True, samesite="Lax")
+        # response.set_cookie("refresh_token", str(refresh), httponly=True, samesite="Lax"), 
         return response
+
+class BearerTokenObtainView(APIView):
+    def post(self, request):
+        username = request.data.get("username")
+        password = request.data.get("password")
+
+        if not username or not password:
+            return Response(
+                {"error": "Both username and password are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        user = authenticate(request, username=username, password=password)
+
+        if user is None:
+            return Response({"error": "Invalid credentials"}, status=401)
+
+        # refresh = RefreshToken.for_user(user)
+        
+        # return Response({
+        #     "role": user.role,
+        #     "username": user.username,
+        #     "access": str(refresh.access_token),
+        #     "refresh": str(refresh),
+        #     "message": "Login successful"
+        # })
+        
+
+        try:
+            refresh = RefreshToken.for_user(user)
+            
+            response = Response({
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "role": user.role,
+                "username": user.username,
+                "message": "Login successful"
+            }, status=status.HTTP_200_OK)
+        
+            response.set_cookie(
+                key='access_token',
+                value=str(refresh.access_token),
+                httponly=True,
+                samesite="None",
+                secure=True,
+                max_age=24 * 3600,
+                domain=None, # For local development
+            )
+            response.set_cookie(
+                key='refresh_token',
+                value=str(refresh),
+                httponly=True,
+                samesite="None",
+                secure=True,
+                max_age=7 * 24 * 3600,
+                domain=None,
+            )
+
+            return response
+            
+        except Exception as e:
+            return Response(
+                {"error": "Could not generate tokens", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class Loginview(APIView):
     def post(self, request):
@@ -324,7 +515,7 @@ class Loginview(APIView):
         })
     
 class CheckAuthView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request):
         return Response({"message": "Authenticated"})
@@ -359,18 +550,20 @@ class StartTestExecution(APIView):
     {
         "test_case_id": 65,
         "assignment_id": 1,
+        "batch_id" : 3,
         "device_uuid": "R9ZR601C18H",
         "device_name": "SM-A025F",
         "os_version":"12",
         "platform": "Android"
-      }  
+    }  
     """
 
-    # permission_classes = [IsAuthenticated, IsTester]
+    permission_classes = [IsAuthenticated, IsTester]
 
     def post(self, request):
         test_case_id = request.data.get("test_case_id")
         assignment_id = request.data.get("assignment_id")
+        batch_id = request.data.get("batch_id")
         device_uuid = request.data.get("device_uuid")
         device_name = request.data.get("device_name")
         os_version = request.data.get("os_version")
@@ -386,7 +579,6 @@ class StartTestExecution(APIView):
 
         # assignment_table_id = get_object_or_404(TestAssignment, id=assignment_id)
 
-
         try:
             device, created = Device.objects.get_or_create(
                 device_uuid=device_uuid,
@@ -399,6 +591,7 @@ class StartTestExecution(APIView):
 
             test_execution = TestExecution.objects.create(
                 test_case=test_case,
+                batch=batch_id if batch_id else None,
                 executed_by=request.user,
                 executed_device=device,
                 overallstatus='in_progress'
@@ -439,19 +632,13 @@ class StartTestExecution(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-        #     response_data = {
-        #         "message": "Test execution initialized successfully",
-        #         "test_execution_id": test_execution.id,
-        #         "device_id": device.id,
-        #         "device_created": created,
-        #         "status": "in_progress",
-        #         "timestamp": timezone.now().isoformat()
-        #     }
+class AuthUserView(APIView):
+    permission_classes = [IsAuthenticated]
 
-        #     return Response(response_data, status=status.HTTP_201_CREATED)
-
-        # except Exception as e:
-        #     return Response(
-        #         {"error": f"Failed to initialize test execution: {str(e)}"},
-        #         status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        #     )
+    def get(self, request):
+        return Response({
+            'username': request.user.username,
+            'role' : request.user.role,
+            'email': request.user.email,
+            # Add more fields if needed
+        })

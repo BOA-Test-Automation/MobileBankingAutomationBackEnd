@@ -47,7 +47,7 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=40),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
@@ -57,19 +57,30 @@ SIMPLE_JWT = {
     "AUTH_COOKIE_REFRESH": "refresh_token",
 }
 
-# Updated CORS settings
-# CORS_ALLOWED_ORIGINS = [
-#     'http://localhost:5173',
-#     "http://192.168.1.7:5173",
-#     "http://localhost:5174",
-#     "http://192.168.1.7:5174",
-#     "http://192.168.0.108:5173"
-# ]
-
-
-CORS_ALLOW_ALL_ORIGINS = True
-
+CORS_ALLOW_ALL_ORIGINS = True  # For development only
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://192.168.0.102:5173",
+    "http://192.168.1.4:8000",
+]
+
+if DEBUG:
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    CSRF_COOKIE_SAMESITE = 'Lax'
+
+# Cookie settings
+SESSION_COOKIE_SAMESITE = 'None'  # Required for cross-site cookies
+SESSION_COOKIE_SECURE = True  # Required when SameSite=None
+CSRF_COOKIE_SECURE = True
+CSRF_COOKIE_SAMESITE = 'None'
+
+# For production with HTTPS:
+# if not DEBUG:
+#     SESSION_COOKIE_DOMAIN = '.yourdomain.com'  # Note the leading dot
+#     CSRF_COOKIE_DOMAIN = '.yourdomain.com'
 
 SOCKETIO_URL = 'socket.io'
 
@@ -137,7 +148,7 @@ WSGI_APPLICATION = 'mb_automation.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'mb_automationupd',
+        'NAME': 'mb_automation',
         'USER': 'root',
         'PASSWORD': '',
         'HOST': 'localhost',

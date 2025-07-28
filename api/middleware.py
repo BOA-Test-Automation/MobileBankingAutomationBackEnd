@@ -10,7 +10,7 @@ from django.utils.deprecation import MiddlewareMixin
 class JWTAuthenticationFromCookieMiddleware(MiddlewareMixin):
     def process_request(self, request):
         access_token = request.COOKIES.get('access_token')
-        # print(access_token)
+        print(access_token)
         if request.path in ['/login/', '/api/token/', '/api/token/refresh/']:
             print("Hello Login")
             return self.get_response(request)

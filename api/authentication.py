@@ -6,7 +6,9 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 class JWTAuthenticationFromCookie(BaseAuthentication):
     def authenticate(self, request):
         token = request.COOKIES.get('access_token')
+        # print(token)
         if not token:
+            print("None")
             return None
 
         try:
