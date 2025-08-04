@@ -458,68 +458,61 @@ class SetCustomGroupView(viewsets.ViewSet):
             )
         
 class AssignBatchToTesterView(APIView):
-    """
-    Assign a custom test group to a tester as a batch assignment
-    Permission: Authenticated users only
-    """
     permission_classes = [IsAuthenticated, IsManager]
 
     def post(self, request):
-        """
-        Handle POST request for /assignBatchToTester
-        Expected request body:
-        {
-            "name" : "Batch Name",
-            "priority": "high",
-            "deadline": "2023-12-31T23:59:59Z",
-            "assigned_to_id": 2,  # ID of the tester being assigned
-            "notes": "Please complete this by Friday",
-            "custom_group_id": 10,  # ID of the custom test group
-            "assignment_type_id": 1  # ID of the test type
-        }
-        Returns:
-        {
-            "message": "Batch assignment created successfully",
-            "batch_id": 123,
-            "total_test_cases": 15
-        }
-        """
         try:
             # Validate required fields
-            required_fields = ['name', 'priority', 'assigned_to_id', 'custom_group_id', 'assignment_type_id']
-            for field in required_fields:
-                if field not in request.data:
-                    return Response(
-                        {"error": f"Missing required field: {field}"},
-                        status=http_status.HTTP_400_BAD_REQUEST
-                    )
+            required_fields = ['name', 'priority', 'assigned_to_id']
+            if not all(field in request.data for field in required_fields):
+                return Response(
+                    {"error": "Missing required fields: name, priority, assigned_to_id"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-            # Get the custom group
-            custom_group_id = request.data['custom_group_id']
-            custom_group = get_object_or_404(CustomTestGroup, id=custom_group_id)
-
-            # Count test cases in the custom group
-            total_test_cases = CustomTestGroupItems.objects.filter(
-                custom_group=custom_group
-            ).count()
+            # Determine assignment type and source
+            if 'custom_group_id' in request.data:
+                assignment_type_name = 'Custom_Group'
+                custom_group = get_object_or_404(CustomTestGroup, id=request.data['custom_group_id'])
+                total_test_cases = CustomTestGroupItems.objects.filter(
+                    custom_group=custom_group
+                ).count()
+                source_field = 'customgroup'
+                source = custom_group
+            elif 'application_id' in request.data:
+                assignment_type_name = 'Application'
+                application = get_object_or_404(Application, id=request.data['application_id'])
+                total_test_cases = TestCase.objects.filter(application=application).count()
+                source_field = 'application'
+                source = application
+            elif 'suite_id' in request.data:
+                assignment_type_name = 'Suite'
+                suite = get_object_or_404(TestSuite, id=request.data['suite_id'])
+                total_test_cases = TestCase.objects.filter(suite=suite).count()
+                source_field = 'suite'
+                source = suite
+            else:
+                return Response(
+                    {"error": "Either custom_group_id, application_id, or suite_id must be provided"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
             if total_test_cases == 0:
                 return Response(
-                    {"error": "The custom test group has no test cases"},
-                    status=http_status.HTTP_400_BAD_REQUEST
+                    {"error": "No test cases found for this assignment"},
+                    status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Get the test type
-            assignment_type_id = request.data['assignment_type_id']
-            assignment_type = get_object_or_404(TestType, id=assignment_type_id)
+            # Get or create the test type
+            assignment_type, _ = TestType.objects.get_or_create(name=assignment_type_name)
 
-            # Create the batch assignment
+            # Create batch assignment
             batch_assignment = BatchAssignment.objects.create(
                 name=request.data['name'],
                 assigned_by=request.user,
                 assigned_to_id=request.data['assigned_to_id'],
                 assignment_type=assignment_type,
-                customgroup=custom_group,
+                **{source_field: source},
                 status='pending',
                 notes=request.data.get('notes', ''),
                 priority=request.data['priority'],
@@ -529,59 +522,72 @@ class AssignBatchToTesterView(APIView):
                 deadline=request.data.get('deadline')
             )
 
-            # Create batch assignment test case entries
-            group_items = CustomTestGroupItems.objects.filter(
-                custom_group=custom_group
-            ).select_related('test_case')
-            
-            for item in group_items:
-                BatchAssignmentTestCase.objects.create(
-                    batch=batch_assignment,
-                    test_case=item.test_case
-                )
+            # For custom groups, create BatchAssignmentTestCase entries
+            if source_field == 'customgroup':
+                group_items = CustomTestGroupItems.objects.filter(
+                    custom_group=custom_group
+                ).select_related('test_case')
+                
+                for item in group_items:
+                    BatchAssignmentTestCase.objects.create(
+                        batch=batch_assignment,
+                        test_case=item.test_case
+                    )
 
             return Response(
                 {
                     "message": "Batch assignment created successfully",
                     "batch_id": batch_assignment.id,
-                    "total_test_cases": total_test_cases
+                    "total_test_cases": total_test_cases,
+                    "assignment_type": assignment_type_name,
+                    "assignment_source": source_field
                 },
-                status=http_status.HTTP_201_CREATED
+                status=status.HTTP_201_CREATED
             )
+
         except Exception as e:
+            if 'batch_assignment' in locals():
+                batch_assignment.delete()
             return Response(
-                {"error": f"An error occurred: {str(e)}"},
-                status=http_status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         
+
 class TesterAssignedBatchTestsView(APIView):
     permission_classes = [IsAuthenticated, IsTester]
 
     def get(self, request):
-
-        # batch = BatchAssignment.objects.first()
-        # print(batch.customgroup)
-
         try:
             # Get all batch assignments for the current user
             batch_assignments = BatchAssignment.objects.filter(
                 assigned_to=request.user
+            ).exclude(  # Add this exclude clause
+                status__in=['passed', 'failed']
             ).select_related(
                 'assigned_by',
                 'assignment_type',
-                'customgroup'
+                'customgroup',
+                'application'
             ).prefetch_related(
                 'batchassignmenttestcase_set__test_case'
             ).order_by('-created_at')
             
-            # print(batch_assignments.assigned_by.username)
-            # print(batch_assignments.customgroup)
-
             results = []
             for batch in batch_assignments:
-                # Get all test case IDs for this batch
-                test_case_ids = list(batch.batchassignmenttestcase_set.all()
-                                   .values_list('test_case_id', flat=True))
+                # Initialize test_case_ids
+                test_case_ids = []
+                
+                if batch.assignment_type.name == "Custom_Group":
+                    # Get test cases from BatchAssignmentTestCase for Custom_Group assignments
+                    test_case_ids = list(batch.batchassignmenttestcase_set.all()
+                                       .values_list('test_case_id', flat=True))
+                elif batch.assignment_type.name == "Application":
+                    # Get all test cases for this application from TestCase table
+                    if batch.application:
+                        test_case_ids = list(TestCase.objects.filter(
+                            application=batch.application
+                        ).values_list('id', flat=True))
                 
                 results.append({
                     "batch_id": batch.id,
@@ -596,7 +602,7 @@ class TesterAssignedBatchTestsView(APIView):
                     "total_test_cases": batch.totaltestcases,
                     "completed_test_cases": batch.completedtestcases,
                     "passed_test_cases": batch.passedtestcases,
-                    "custom_group_name": batch.customgroup.name,
+                    "application_id": batch.application.id if batch.application else None,
                     "custom_group_id": batch.customgroup.id if batch.customgroup else None,
                     "test_case_ids": test_case_ids  # Array of test case IDs
                 })
@@ -612,6 +618,90 @@ class TesterAssignedBatchTestsView(APIView):
                 status=400
             )
         
+
+class ManagerAssignedBatchTestsView(APIView):
+    permission_classes = [IsAuthenticated, IsManager]
+
+    def get(self, request):
+        try:
+            # Get all batch assignments for the current user
+            batch_assignments = BatchAssignment.objects.filter(
+                assigned_by=request.user
+            ).exclude(
+                status__in=['passed', 'failed']
+            ).select_related(
+                'assigned_to',
+                'assignment_type',
+                'customgroup',
+                'customgroup__application',  # Add this for custom group application access
+                'application',
+                'suite',
+                'suite__application'  # Add this for suite application access
+            ).prefetch_related(
+                'batchassignmenttestcase_set__test_case'
+            ).order_by('-created_at')
+            
+            results = []
+            for batch in batch_assignments:
+                # Initialize test_case_ids and application info
+                test_case_ids = []
+                application_id = None
+                application_name = None
+                
+                # Determine application info based on assignment type
+                if batch.assignment_type.name == "Custom_Group" and batch.customgroup:
+                    application_id = batch.customgroup.application.id
+                    application_name = batch.customgroup.application.name
+                    # Get test cases from BatchAssignmentTestCase
+                    test_case_ids = list(batch.batchassignmenttestcase_set.all()
+                                       .values_list('test_case_id', flat=True))
+                elif batch.assignment_type.name == "Application" and batch.application:
+                    application_id = batch.application.id
+                    application_name = batch.application.name
+                    # Get all test cases for this application
+                    test_case_ids = list(TestCase.objects.filter(
+                        application=batch.application
+                    ).values_list('id', flat=True))
+                elif batch.assignment_type.name == "Suite" and batch.suite:
+                    application_id = batch.suite.application.id
+                    application_name = batch.suite.application.name
+                    # Get all test cases for this suite
+                    test_case_ids = list(TestCase.objects.filter(
+                        suite=batch.suite
+                    ).values_list('id', flat=True))
+                
+                results.append({
+                    "batch_id": batch.id,
+                    "batch_name": batch.name,
+                    "assigned_to": batch.assigned_to.username,
+                    "assigned_date": batch.created_at,
+                    "priority": batch.priority,
+                    "status": batch.status,
+                    "deadline": batch.deadline,
+                    "notes": batch.notes,
+                    "assignment_type": batch.assignment_type.name,
+                    "total_test_cases": batch.totaltestcases,
+                    "completed_test_cases": batch.completedtestcases,
+                    "passed_test_cases": batch.passedtestcases,
+                    "application_id": application_id,
+                    "application_name": application_name,  # Added application name
+                    "custom_group_id": batch.customgroup.id if batch.customgroup else None,
+                    "suite_id": batch.suite.id if batch.suite else None,  # Added suite ID
+                    "test_case_ids": test_case_ids
+                })
+
+            return Response({
+                "count": len(results),
+                "results": results
+            }, status=200)
+
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=400
+            )
+
+
 class BatchTestCasesView(APIView):
     permission_classes = [IsAuthenticated, IsTester]
 
@@ -621,78 +711,78 @@ class BatchTestCasesView(APIView):
             batch = get_object_or_404(
                 BatchAssignment.objects.select_related(
                     'assignment_type',
-                    'customgroup'
+                    'customgroup',
+                    'application',
+                    'suite'  # Added suite
                 ),
                 id=batch_id,
                 assigned_to=request.user
             )
 
-            # Get the custom group if it exists
-            custom_group = batch.customgroup
-
-            # Get all batch assignment test cases with their order from custom group
-            batch_test_cases = BatchAssignmentTestCase.objects.filter(
-                batch=batch
-            ).select_related(
-                'test_case',
-                'execution'
-            ).annotate(
-                order_in_group=Case(
-                    When(
-                        test_case__customtestgroupitems__custom_group=custom_group,
-                        then='test_case__customtestgroupitems__order_ingroup'
-                    ),
-                    default=Value(99999),
-                    output_field=IntegerField()
-                ) if custom_group else Value(0, output_field=IntegerField())
-            ).order_by('order_in_group', 'test_case__name')
-
-            # Get unique test cases while preserving order
-            seen_test_case_ids = set()
+            # Initialize variables
             test_cases_data = []
-            
-            for batch_test_case in batch_test_cases:
-                test_case = batch_test_case.test_case
+            custom_group = batch.customgroup
+            application = batch.application
+            suite = batch.suite  # Added suite
+
+            # Get test cases based on assignment type
+            if custom_group:
+                # Custom Group logic (existing implementation)
+                batch_test_cases = BatchAssignmentTestCase.objects.filter(
+                    batch=batch
+                ).select_related(
+                    'test_case',
+                    'execution'
+                ).annotate(
+                    order_in_group=Case(
+                        When(
+                            test_case__customtestgroupitems__custom_group=custom_group,
+                            then='test_case__customtestgroupitems__order_ingroup'
+                        ),
+                        default=Value(99999),
+                        output_field=IntegerField()
+                    )
+                ).order_by('order_in_group', 'test_case__name')
+
+                # Get unique test cases while preserving order
+                seen_test_case_ids = set()
                 
-                # Skip duplicates
-                if test_case.id in seen_test_case_ids:
-                    continue
-                seen_test_case_ids.add(test_case.id)
+                for batch_test_case in batch_test_cases:
+                    test_case = batch_test_case.test_case
+                    
+                    if test_case.id in seen_test_case_ids:
+                        continue
+                    seen_test_case_ids.add(test_case.id)
 
-                # Get dynamic test steps
-                dynamic_steps = []
-                test_steps = TestStepTest.objects.filter(
-                    testcase=test_case,
-                    input_field_type='dynamic'
-                ).order_by('step_order')
-                
-                for step in test_steps:
-                    dynamic_steps.append({
-                        "step_id" : step.id,
-                        "step_order": step.step_order,
-                        "action": step.action,
-                        "input_type": step.input_type,
-                        "input_field_type": step.input_field_type,
-                        "parameter_name": step.parameter_name,
-                        "element_id": step.element_id
-                    })
+                    test_cases_data.append(self._prepare_test_case_data(test_case, batch_test_case))
 
-                test_case_data = {
-                    "testcase": test_case.name,
-                    "testcase_id": test_case.id,
-                    "code": test_case.code,
-                    "status": batch.status,
-                    "execution_id": batch_test_case.execution.id if batch_test_case.execution else None,
-                    "description": test_case.description,
-                    "created_at": test_case.created_at,
-                    "updated_at": test_case.updated_at,
-                    "has_dynamic_steps": len(dynamic_steps) > 0,
-                    "dynamic_test_steps": dynamic_steps if dynamic_steps else None
-                }
+            elif application:
+                # Application logic - get all test cases ordered by suite_id then name
+                test_cases = TestCase.objects.filter(
+                    application=application
+                ).select_related('suite') \
+                 .order_by('suite__id', 'name')
 
-                test_cases_data.append(test_case_data)
+                for test_case in test_cases:
+                    test_cases_data.append(self._prepare_test_case_data(test_case, None))
 
-            return Response({
+            elif suite:
+                # Suite logic - get all test cases for the suite ordered by name
+                test_cases = TestCase.objects.filter(
+                    suite=suite
+                ).select_related('suite') \
+                 .order_by('name')
+
+                for test_case in test_cases:
+                    test_cases_data.append(self._prepare_test_case_data(test_case, None))
+
+            else:
+                return Response(
+                    {"error": "Batch assignment has no valid assignment source (custom group, application, or suite)"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            response_data = {
                 "batch_id": batch.id,
                 "batch_name": batch.name,
                 "test_type": batch.assignment_type.name,
@@ -701,16 +791,57 @@ class BatchTestCasesView(APIView):
                 "notes": batch.notes,
                 "custom_group_id": custom_group.id if custom_group else None,
                 "custom_group_name": custom_group.name if custom_group else None,
+                "application_id": application.id if application else None,
+                "application_name": application.name if application else None,
+                "suite_id": suite.id if suite else None,  # Added suite info
+                "suite_name": suite.name if suite else None,  # Added suite info
                 "test_cases": test_cases_data,
                 "count": len(test_cases_data)
-            }, status=status.HTTP_200_OK)
+            }
+
+            return Response(response_data, status=status.HTTP_200_OK)
 
         except Exception as e:
             return Response(
                 {"error": str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+    def _prepare_test_case_data(self, test_case, batch_test_case):
+        """Helper method to prepare test case data with dynamic steps"""
+        dynamic_steps = []
+        test_steps = TestStepTest.objects.filter(
+            testcase=test_case,
+            input_field_type='dynamic'
+        ).order_by('step_order')
         
+        for step in test_steps:
+            dynamic_steps.append({
+                "step_id": step.id,
+                "step_order": step.step_order,
+                "action": step.action,
+                "input_type": step.input_type,
+                "input_field_type": step.input_field_type,
+                "parameter_name": step.parameter_name,
+                "element_id": step.element_id
+            })
+
+        return {
+            "testcase": test_case.name,
+            "testcase_id": test_case.id,
+            "code": test_case.code,
+            "suite_id": test_case.suite.id,  # Include suite ID in response
+            "suite_name": test_case.suite.name,  # Include suite name in response
+            "status": batch_test_case.batch.status if batch_test_case else 'pending',
+            "execution_id": batch_test_case.execution.id if batch_test_case and batch_test_case.execution else None,
+            "description": test_case.description,
+            "created_at": test_case.created_at,
+            "updated_at": test_case.updated_at,
+            "has_dynamic_steps": len(dynamic_steps) > 0,
+            "dynamic_test_steps": dynamic_steps if dynamic_steps else None
+        }
+    
+
 class GetCustomGroupTypeView(APIView):
     def get(self, request):
         try:

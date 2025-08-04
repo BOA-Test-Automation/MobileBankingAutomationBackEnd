@@ -2,12 +2,17 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status as http_status
 from rest_framework.permissions import IsAuthenticated
-from .permissions import IsTester
+from .permissions import *
+import logging
 from .models import *
 from django.shortcuts import get_object_or_404
 from django.shortcuts import get_object_or_404
 import json
+from rest_framework import status
 from rest_framework.exceptions import PermissionDenied
+from django.utils.dateparse import parse_datetime
+logger = logging.getLogger(__name__)
+from django.db.models import Prefetch
 
 class SaveTestResultView(APIView):
 
@@ -25,7 +30,8 @@ class SaveTestResultView(APIView):
             "time_start": "2023-05-20T10:00:00.000Z",
             "time_end": "2023-05-20T10:00:01.230Z",
             "log_message": "Step 1: click completed",
-            "error": null
+            "error": null,
+            "screenshot" :null
             },
             {
             "test_step_id": 230,
@@ -106,6 +112,7 @@ class SaveTestResultView(APIView):
                         'time_end': step_data.get('time_end'),
                         'log_message': step_data.get('log_message'),
                         'error': step_data.get('error'),
+                        'actual_screenshot' : step_data.get('screenshot')
                     }
                 )
 
@@ -118,6 +125,7 @@ class SaveTestResultView(APIView):
                     "actual_input": step_result.actual_input,
                     "log_message": step_result.log_message,
                     "error": step_result.error,
+                    "screenshoot" : step_result.actual_screenshot
                 })
             
             return Response({
@@ -134,71 +142,315 @@ class SaveTestResultView(APIView):
                 {"error": str(e)},
                 status=http_status.HTTP_400_BAD_REQUEST
             )
-# class AllTestResultsListView(APIView):
-#     permission_classes = [IsAuthenticated]
+        
+class StartBatchTestExecution(APIView):
 
-#     def get(self, request):
-#         """
-#         Get all step results for the tester
-#         """
+    permission_classes = [IsAuthenticated, IsTester]
+
+    def post(self, request):
+        test_case_id = request.data.get("test_case_id")
+        batch_id = request.data.get("batch_id")
+        device_uuid = request.data.get("device_uuid")
+        device_name = request.data.get("device_name")
+        os_version = request.data.get("os_version")
+        platform = request.data.get("platform")
+
+        if not all([test_case_id, device_uuid, os_version, platform, batch_id]):
+            return Response(
+                {"error": "Required fields are missing"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        test_case = get_object_or_404(TestCase, id=test_case_id)
+        batch = get_object_or_404(BatchAssignment, id=batch_id)
+
+        try:
+            device, created = Device.objects.get_or_create(
+                device_uuid=device_uuid,
+                defaults={
+                    'device_name': device_name,
+                    'platform': platform,
+                    'os_version': os_version
+                }
+            )
+
+            # Create test execution
+            test_execution = TestExecution.objects.create(
+                test_case=test_case,
+                batch=batch,
+                executed_by=request.user,
+                executed_device=device,
+                overallstatus='pending'
+            )
+
+            # Link to BatchAssignmentTestCase
+            batch_test_case = BatchAssignmentTestCase.objects.get(
+                batch=batch,
+                test_case=test_case
+            )
+            batch_test_case.execution = test_execution
+            batch_test_case.save()
+
+            return Response({
+                "message": "Batch test execution initialized successfully",
+                "test_execution_id": test_execution.id,
+                "device_id": device.id,
+                "status": "in_progress"
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to initialize batch test execution: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+
+# class SaveBatchTestResultsView(APIView):
+#     permission_classes = [IsAuthenticated, IsTester]
+
+#     def post(self, request):
 #         try:
-#             test_execution = get_object_or_404(TestExecution, id=test_execution_id)
-            
-#             # Verify the requesting user has permission (either assigned tester or manager)
-#             if request.user != test_execution.executed_by and request.user.role != 'manager':
-#                 return Response(
-#                     {"error": "You don't have permission to view these results"},
-#                     status=http_status.HTTP_403_FORBIDDEN
-#                 )
-            
-#             results = StepResult.objects.filter(
-#                 test_execution=test_execution
-#             ).select_related('test_step').order_by('test_step__step_order')
+#             data = request.data
+#             batch_id = data.get('batch_id')
+#             overall_status = data.get('overall_status')
+#             test_case_results = data.get('test_case_results', [])
+#             completed_at = data.get('completed_at')
 
-#             data = []
-#             for result in results:
-#                 data.append({
-#                     "id": result.id,
-#                     "step_order": result.test_step.step_order,
-#                     "expected_action": result.test_step.action,
-#                     "expected_element": result.test_step.element_id,
-#                     "expected_input": result.test_step.actual_input,
-#                     "actual_id": result.actual_id,
-#                     "actual_input": result.actual_input,
-#                     "status": result.status,
-#                     "duration": result.duration,
-#                     "log_message": result.log_message,
-#                     "error": result.error,
-#                     "created_at": result.created_at
-#                 })
+#             if not all([batch_id, overall_status]):
+#                 return Response(
+#                     {"error": "batch_id and overall_status are required"},
+#                     status=status.HTTP_400_BAD_REQUEST
+#                 )
+
+#             # Get batch assignment with select_related/prefetch_related for performance
+#             batch_assignment = BatchAssignment.objects.select_related(
+#                 'assigned_to', 'assigned_by', 'assignment_type'
+#             ).get(id=batch_id)
+
+#             # Update batch status
+#             batch_assignment.status = overall_status
+#             batch_assignment.completedtestcases = len(test_case_results)
+#             batch_assignment.passedtestcases = sum(
+#                 1 for tc in test_case_results if tc.get('status') == 'passed'
+#             )
+            
+#             if completed_at:
+#                 try:
+#                     batch_assignment.completed_at = parse_datetime(completed_at)
+#                 except (ValueError, TypeError):
+#                     pass
+
+#             batch_assignment.save()
+
+#             results = []
+#             for tc_result in test_case_results:
+#                 try:
+#                     test_execution = TestExecution.objects.select_related(
+#                         'test_case', 'executed_by', 'executed_device'
+#                     ).get(
+#                         id=tc_result.get('test_execution_id'),
+#                         batch=batch_assignment
+#                     )
+                    
+#                     # Update execution status
+#                     test_execution.overallstatus = tc_result.get('status')
+#                     test_execution.save()
+
+#                     # Process step results
+#                     step_results = []
+#                     for step_data in tc_result.get('step_results', []):
+#                         try:
+#                             test_step = TestStepTest.objects.get(id=step_data.get('test_step_id'))
+                            
+#                             # Convert ISO strings to datetime
+#                             time_start = parse_datetime(step_data.get('time_start'))
+#                             time_end = parse_datetime(step_data.get('time_end'))
+                            
+#                             step_result, created = StepResult.objects.update_or_create(
+#                                 test_execution=test_execution,
+#                                 test_step=test_step,
+#                                 defaults={
+#                                     'actual_id': step_data.get('actual_id'),
+#                                     'actual_input': step_data.get('actual_input'),
+#                                     'status': step_data.get('status'),
+#                                     'duration': step_data.get('duration'),
+#                                     'time_start': time_start,
+#                                     'time_end': time_end,
+#                                     'log_message': step_data.get('log_message'),
+#                                     'error': step_data.get('error'),
+#                                     'actual_screenshot': step_data.get('screenshot') 
+#                                 }
+#                             )
+#                             step_results.append({
+#                                 "test_step_id": test_step.id,
+#                                 "status": step_result.status,
+#                                 "created": created
+#                             })
+                            
+#                         except TestStepTest.DoesNotExist:
+#                             continue
+#                         except Exception as e:
+#                             logger.error(f"Error saving step result: {str(e)}")
+#                             continue
+
+#                     results.append({
+#                         "test_case_id": test_execution.test_case.id,
+#                         "test_execution_id": test_execution.id,
+#                         "step_results_count": len(step_results)
+#                     })
+
+#                 except TestExecution.DoesNotExist:
+#                     continue
+#                 except Exception as e:
+#                     logger.error(f"Error processing test case result: {str(e)}")
+#                     continue
 
 #             return Response({
-#                 "test_execution_id": test_execution_id,
-#                 "overall_status": test_execution.overallstatus,
-#                 "results": data
-#             })
-            
-#         except Exception as e:
-#             return Response(
-#                 {"error": str(e)},
-#                 status=http_status.HTTP_400_BAD_REQUEST
-#             )
-        
-        
-class TestResultsListView(APIView):
+#                 "message": "Batch test results saved successfully",
+#                 "batch_id": batch_assignment.id,
+#                 "overall_status": batch_assignment.status,
+#                 "passed_count": batch_assignment.passedtestcases,
+#                 "total_count": batch_assignment.completedtestcases,
+#                 "saved_results": len(results)
+#             }, status=status.HTTP_200_OK)
 
+#         except BatchAssignment.DoesNotExist:
+#             return Response(
+#                 {"error": "Batch assignment not found"},
+#                 status=status.HTTP_404_NOT_FOUND
+#             )
+#         except Exception as e:
+#             logger.error(f"Error saving batch results: {str(e)}")
+#             return Response(
+#                 {"error": "An error occurred while saving results"},
+#                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
+#             )
+
+class SaveBatchTestResultsView(APIView):
+    permission_classes = [IsAuthenticated, IsTester]
+
+    def post(self, request):
+        try:
+            data = request.data
+            batch_id = data.get('batch_id')
+            overall_status = data.get('overall_status')
+            test_case_results = data.get('test_case_results', [])
+            completed_at = data.get('completed_at')
+
+            if not all([batch_id, overall_status]):
+                return Response(
+                    {"error": "batch_id and overall_status are required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            batch_assignment = BatchAssignment.objects.select_related(
+                'assigned_to', 'assigned_by', 'assignment_type'
+            ).get(id=batch_id)
+            
+            # --- We can optimistically save the main batch info first ---
+            batch_assignment.status = overall_status
+            batch_assignment.completedtestcases = len(test_case_results)
+            batch_assignment.passedtestcases = sum(
+                1 for tc in test_case_results if tc.get('status') == 'passed'
+            )
+            if completed_at:
+                try:
+                    batch_assignment.completed_at = parse_datetime(completed_at)
+                except (ValueError, TypeError):
+                    pass
+            batch_assignment.save()
+
+
+            # *** CRITICAL CHANGE IS HERE ***
+            # We will now check for errors inside the loop and handle them after.
+            errors_encountered = []
+            saved_results_count = 0
+
+            for tc_result in test_case_results:
+                try:
+                    test_execution = TestExecution.objects.select_related(
+                        'test_case', 'executed_by', 'executed_device'
+                    ).get(id=tc_result.get('test_execution_id'), batch=batch_assignment)
+                    
+                    test_execution.overallstatus = tc_result.get('status')
+                    test_execution.save()
+
+                    for step_data in tc_result.get('step_results', []):
+                        try:
+                            test_step = TestStepTest.objects.get(id=step_data.get('test_step_id'))
+                            
+                            time_start = parse_datetime(step_data.get('time_start')) if step_data.get('time_start') else None
+                            time_end = parse_datetime(step_data.get('time_end')) if step_data.get('time_end') else None
+                            
+                            StepResult.objects.update_or_create(
+                                test_execution=test_execution,
+                                test_step=test_step,
+                                defaults={
+                                    'actual_id': step_data.get('actual_id'),
+                                    'actual_input': step_data.get('actual_input'),
+                                    'status': step_data.get('status'),
+                                    'duration': step_data.get('duration'),
+                                    'time_start': time_start,
+                                    'time_end': time_end,
+                                    'log_message': step_data.get('log_message'),
+                                    'error': step_data.get('error'),
+                                    'actual_screenshot': step_data.get('screenshot')
+                                }
+                            )
+                        except Exception as e:
+                            # Instead of continuing, we log the specific error and append it to our list
+                            error_message = f"Failed to save step result for Test Step ID {step_data.get('test_step_id')}: {str(e)}"
+                            logger.error(error_message)
+                            errors_encountered.append(error_message)
+                    
+                    # If we made it this far without error for the TC, increment the count
+                    if not errors_encountered:
+                        saved_results_count += 1
+
+                except Exception as e:
+                    error_message = f"Failed to process Test Case Execution ID {tc_result.get('test_execution_id')}: {str(e)}"
+                    logger.error(error_message)
+                    errors_encountered.append(error_message)
+
+            # *** After the loop, check if any errors were logged ***
+            if errors_encountered:
+                # If there were any failures, return a 500 error with details
+                return Response({
+                    "error": "Failed to save one or more results to the database.",
+                    "details": errors_encountered,
+                    "saved_results_count": saved_results_count
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            # If the loop completes with no errors, return a success response
+            return Response({
+                "message": "Batch test results saved successfully",
+                "batch_id": batch_assignment.id,
+                "overall_status": batch_assignment.status,
+                "saved_results": saved_results_count
+            }, status=status.HTTP_200_OK)
+
+        except BatchAssignment.DoesNotExist:
+            return Response({"error": "Batch assignment not found"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            # This is a catch-all for errors outside the main loop (e.g., finding the batch)
+            logger.error(f"Critical error in SaveBatchTestResultsView: {str(e)}")
+            return Response({"error": "An unexpected server error occurred while saving results"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class TestResultsListView(APIView):
     permission_classes = [IsAuthenticated, IsTester]
 
     def get(self, request, test_execution_id):
         """
-        Get all step results for a test execution
+        Get all step results for a test execution with test case details
         """
         try:
-            test_execution = get_object_or_404(TestExecution, id=test_execution_id)
+            test_execution = get_object_or_404(
+                TestExecution.objects.select_related('test_case'),  # Add select_related
+                id=test_execution_id
+            )
 
-            # print(test_execution.executed_by)
-            
-            # Verify the requesting user has permission (either assigned tester or manager)
+            # Verify the requesting user has permission
             if request.user != test_execution.executed_by and request.user.role != 'manager':
                 return Response(
                     {"error": "You don't have permission to view these results"},
@@ -223,12 +475,15 @@ class TestResultsListView(APIView):
                     "duration": result.duration,
                     "log_message": result.log_message,
                     "error": result.error,
+                    "screenshot" : result.actual_screenshot,
                     "created_at": result.created_at
                 })
 
             return Response({
                 "test_execution_id": test_execution_id,
                 "overall_status": test_execution.overallstatus,
+                "test_case_name": test_execution.test_case.name,  # Add test case name
+                "test_case_code": test_execution.test_case.code,  # Add test case code
                 "results": data
             })
             
@@ -237,64 +492,6 @@ class TestResultsListView(APIView):
                 {"error": str(e)},
                 status=http_status.HTTP_400_BAD_REQUEST
             )
-
-# class TesterTestResultsView(APIView):
-#     permission_classes = [IsAuthenticated, IsTester]
-
-#     def get(self, request, execution_id):
-#         try:
-#             # Get any assignment with this execution_id to verify existence
-#             assignment = get_object_or_404(
-#                 TestAssignment,
-#                 execution_id=execution_id
-#             )
-            
-#             # Check if the current user is the assigned tester
-#             if assignment.assigned_to != request.user:
-#                 raise PermissionDenied("You are not allowed to see these results")
-            
-#             # Now get all test assignments for this execution and user
-#             assignments = TestAssignment.objects.filter(
-#                 execution_id=execution_id,
-#                 assigned_to=request.user
-#             ).select_related(
-#                 'test_case',
-#                 'assigned_by',
-#                 'execution'
-#             ).order_by('priority', 'deadline')
-
-#             execution = []
-#             for assignment in assignments:
-#                 test_case = assignment.test_case
-#                 execution.append({
-#                     "test_case_name": test_case.name,
-#                     "assigned_by": assignment.assigned_by.username,
-#                     "assigned_date": assignment.created_at,
-#                     "priority": assignment.priority,
-#                     "status": assignment.status,
-#                     "deadline": assignment.deadline,
-#                     "execution_id": assignment.execution.id if assignment.execution else None,
-#                     "test_case_code": test_case.code,
-#                     "test_case_description": test_case.description,
-#                     "notes": assignment.notes,
-#                     "assignment_id": assignment.id
-#                 })
-
-#             return Response({
-#                 "count": len(execution),
-#                 "execution": execution
-#             }, status=200)
-
-#         except PermissionDenied as e:
-#             return Response(
-#                 {"error": str(e)},
-#                 status=403  # This ensures 403 status
-#             )
-#         except Exception as e:
-#             return Response(
-#                 {"error": str(e)},
-#                 status=400
-#             )
 
 
 class TesterAssignedTestsView(APIView):
@@ -312,8 +509,8 @@ class TesterAssignedTestsView(APIView):
                 'test_case',
                 'assigned_by',
                 'execution',
-                'execution__executed_device'  # Add this to join with Device table
-            ).order_by('priority', 'deadline')
+                'execution__executed_device'
+            ).order_by('-updated_at', 'priority', 'deadline')  # Most recent first, then by priority/deadline
 
             results = []
             for assignment in assignments:
@@ -334,7 +531,138 @@ class TesterAssignedTestsView(APIView):
                     "test_case_description": assignment.test_case.description,
                     "notes": assignment.notes,
                     "assignment_id": assignment.id,
-                    "device_name": device_name  # Add device name to response
+                    "device_name": device_name,
+                    "last_updated": assignment.updated_at  # Include the update timestamp
+                })
+
+            return Response({
+                "count": len(results),
+                "results": results
+            }, status=200)
+
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=400
+            )
+        
+class ManagerAssignedTestsView(APIView):
+    permission_classes = [IsAuthenticated, IsManager]
+
+    def get(self, request):
+        try:
+            # Get all test assignments for the current user where execution is not null
+            assignments = TestAssignment.objects.filter(
+                assigned_by=request.user,
+                execution__isnull=False
+            ).exclude(
+                status='pending'
+            ).select_related(
+                'test_case',
+                'assigned_to',
+                'execution',
+                'execution__executed_device'
+            ).order_by('-updated_at', 'priority', 'deadline')  # Most recent first, then by priority/deadline
+
+            results = []
+            for assignment in assignments:
+                # Get device name if execution exists and has a device
+                device_name = None
+                if assignment.execution and assignment.execution.executed_device:
+                    device_name = assignment.execution.executed_device.device_name
+
+                results.append({
+                    "test_case_name": assignment.test_case.name,
+                    "assigned_to": assignment.assigned_to.username,
+                    "assigned_date": assignment.created_at,
+                    "priority": assignment.priority,
+                    "status": assignment.status,
+                    "deadline": assignment.deadline,
+                    "execution_id": assignment.execution.id,
+                    "test_case_code": assignment.test_case.code,
+                    "test_case_description": assignment.test_case.description,
+                    "notes": assignment.notes,
+                    "assignment_id": assignment.id,
+                    "device_name": device_name,
+                    "last_updated": assignment.updated_at  # Include the update timestamp
+                })
+
+            return Response({
+                "count": len(results),
+                "results": results
+            }, status=200)
+
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=400
+            )
+
+
+class TesterExecutedBatchTestsView(APIView):
+    permission_classes = [IsAuthenticated, IsTester]
+
+    def get(self, request):
+        try:
+            # Get all batch assignments for the current user that have been executed (status not pending)
+            batch_assignments = BatchAssignment.objects.filter(
+                assigned_to=request.user
+            ).exclude(
+                status='pending'
+            ).select_related(
+                'assigned_by',
+                'assignment_type',
+                'customgroup',
+                'application'
+            ).prefetch_related(
+                'assigned_objects'  # This is the related_name for TestExecution's batch field
+            ).order_by('-updated_at')  # Changed to descending order with '-'
+            
+            results = []
+            for batch in batch_assignments:
+                # Get all executions for this batch by the current user
+                executions = batch.assigned_objects.filter(
+                    executed_by=request.user
+                ).select_related(
+                    'test_case',
+                    'executed_device'
+                ).order_by('-updated_at')  # Also order executions by updated_at if needed
+                
+                # Collect execution IDs and device info
+                execution_ids = []
+                device_names = []
+                
+                for execution in executions:
+                    execution_ids.append(execution.id)
+                    if execution.executed_device:
+                        device_names.append(execution.executed_device.device_name)
+                
+                # Remove duplicate device names while preserving order
+                seen_devices = set()
+                unique_device_names = []
+                for name in device_names:
+                    if name not in seen_devices:
+                        seen_devices.add(name)
+                        unique_device_names.append(name)
+                
+                results.append({
+                    "batch_id": batch.id,
+                    "batch_name": batch.name,
+                    "assigned_by": batch.assigned_by.username,
+                    "assigned_date": batch.created_at,
+                    "priority": batch.priority,
+                    "status": batch.status,
+                    "deadline": batch.deadline,
+                    "notes": batch.notes,
+                    "assignment_type": batch.assignment_type.name if batch.assignment_type else None,
+                    "total_test_cases": batch.totaltestcases,
+                    "completed_test_cases": batch.completedtestcases,
+                    "passed_test_cases": batch.passedtestcases,
+                    "application_id": batch.application.id if batch.application else None,
+                    "custom_group_id": batch.customgroup.id if batch.customgroup else None,
+                    "execution_ids": execution_ids,  # Array of execution IDs
+                    "devices_used": unique_device_names,  # Array of unique device names
+                    "last_updated": batch.updated_at  # Include the updated_at field
                 })
 
             return Response({
@@ -349,6 +677,86 @@ class TesterAssignedTestsView(APIView):
             )
         
 
+class ManagerExecutedBatchTestsView(APIView):
+    permission_classes = [IsAuthenticated, IsManager]
+
+    def get(self, request):
+        try:
+            # Get all batch assignments created by this manager that have been executed
+            batch_assignments = BatchAssignment.objects.filter(
+                assigned_by=request.user
+            ).exclude(
+                status__in=['passed', 'failed']
+            ).select_related(
+                'assigned_to',
+                'assignment_type',
+                'customgroup',
+                'customgroup__application',  # For CustomGroup assignments
+                'application',  # For direct Application assignments
+                'suite',
+                'suite__application'  # For Suite assignments
+            ).prefetch_related(
+                Prefetch('assigned_objects',
+                    queryset=TestExecution.objects.select_related(
+                        'executed_by',
+                        'executed_device',
+                        'test_case'
+                    ).order_by('-updated_at')
+                )
+            ).order_by('-updated_at')
+            
+            results = []
+            for batch in batch_assignments:
+                # Get the first execution (since all executions in a batch use same device/tester)
+                execution = batch.assigned_objects.first()
+                
+                # Determine application info based on assignment type
+                application_id = None
+                application_name = None
+                
+                if batch.assignment_type.name == "Custom_Group" and batch.customgroup:
+                    application_id = batch.customgroup.application.id
+                    application_name = batch.customgroup.application.name
+                elif batch.assignment_type.name == "Application" and batch.application:
+                    application_id = batch.application.id
+                    application_name = batch.application.name
+                elif batch.assignment_type.name == "Suite" and batch.suite:
+                    application_id = batch.suite.application.id
+                    application_name = batch.suite.application.name
+                
+                results.append({
+                    "batch_id": batch.id,
+                    "batch_name": batch.name,
+                    "assigned_to": batch.assigned_to.username,
+                    "assigned_date": batch.created_at,
+                    "priority": batch.priority,
+                    "batch_status": batch.status,
+                    "deadline": batch.deadline,
+                    "notes": batch.notes,
+                    "assignment_type": batch.assignment_type.name if batch.assignment_type else None,
+                    "total_test_cases": batch.totaltestcases,
+                    "application_id": application_id,
+                    "application_name": application_name,
+                    "custom_group_id": batch.customgroup.id if batch.customgroup else None,
+                    "suite_id": batch.suite.id if batch.suite else None,
+                    # "execution_id": execution.id if execution else None,
+                    # "execution_status": execution.overallstatus if execution else None,
+                    # "device_used": execution.executed_device.device_name if execution and execution.executed_device else None,
+                    # "tester": execution.executed_by.username if execution else None,
+                    "last_updated": batch.updated_at
+                })
+
+            return Response({
+                "count": len(results),
+                "results": results
+            }, status=200)
+
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=400
+            )
+        
 class TestResultDetailView(APIView):
     permission_classes = [IsAuthenticated]
 

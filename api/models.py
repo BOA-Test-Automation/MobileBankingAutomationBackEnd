@@ -231,13 +231,31 @@ class TestType(models.Model):
      created_at = models.DateTimeField(auto_now_add=True)
      updated_at = models.DateTimeField(auto_now=True)
 
+# class CustomTestGroup(models.Model):
+#     name = models.CharField(max_length=255, default=None)
+#     application = models.ForeignKey(Application, on_delete=models.CASCADE,  related_name='application_id', default=None)
+#     description = models.CharField(max_length=255)
+#     created_by = models.ForeignKey(User, on_delete=models.CASCADE)
+#     created_at = models.DateTimeField(auto_now_add=True)
+#     updated_at = models.DateTimeField(auto_now=True)
+
+
 class CustomTestGroup(models.Model):
     name = models.CharField(max_length=255, default=None)
-    application = models.ForeignKey(Application, on_delete=models.CASCADE,  related_name='application_id', default=None)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE, related_name='application_id', default=None)
     description = models.CharField(max_length=255)
     created_by = models.ForeignKey(User, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    # Add this property to get test cases
+    @property
+    def test_cases(self):
+        return TestCase.objects.filter(
+            id__in=CustomTestGroupItems.objects.filter(
+                custom_group=self
+            ).values_list('test_case_id', flat=True)
+        )
 
 class CustomTestGroupItems(models.Model):
     custom_group = models.ForeignKey(CustomTestGroup, on_delete=models.CASCADE)
@@ -246,8 +264,8 @@ class CustomTestGroupItems(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-class BatchAssignment(models.Model):
 
+class BatchAssignment(models.Model):
     STATUS_CHOICES = [
         ('passed', 'Passed'),
         ('failed', 'Failed'),
@@ -259,8 +277,10 @@ class BatchAssignment(models.Model):
     name = models.CharField(max_length=255)
     assigned_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='batch_assignments_made')
     assigned_to = models.ForeignKey(User, on_delete=models.CASCADE, related_name='batch_assignments_received')
-    assignment_type = models.ForeignKey(TestType, on_delete=models.CASCADE)
-    customgroup = models.ForeignKey(CustomTestGroup, on_delete=models.CASCADE, related_name='customgroupid', blank=True, null=True)
+    assignment_type = models.ForeignKey(TestType, on_delete=models.CASCADE, default='1')
+    customgroup = models.ForeignKey(CustomTestGroup, on_delete=models.SET_NULL, null=True, blank=True)
+    application = models.ForeignKey('Application', on_delete=models.SET_NULL, null=True, blank=True)
+    suite = models.ForeignKey('TestSuite', on_delete=models.SET_NULL, null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
     priority = models.CharField(max_length=10, choices=TestAssignment.PRIORITY_CHOICES, default='medium')
@@ -270,6 +290,19 @@ class BatchAssignment(models.Model):
     deadline = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def test_cases(self):
+        if self.customgroup:
+            return self.customgroup.test_cases  # Uses the property we just added
+        elif self.application:
+            return TestCase.objects.filter(application=self.application)
+        elif self.suite:
+            return TestCase.objects.filter(suite=self.suite)
+        return TestCase.objects.none()
+    
+    class Meta:
+        unique_together = ('name', "assigned_by", "application", "customgroup", "suite")
 
 
 class BatchAssignmentTestCase(models.Model):

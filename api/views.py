@@ -614,6 +614,7 @@ class StartTestExecution(APIView):
                         print(f"TestAssignment {assignment_id} not found or doesn't belong to user {request.user.id}")
 
             response_data = {
+                "success" : True,
                 "message": "Test execution initialized successfully",
                 "test_execution_id": test_execution.id,
                 "assignment_updated": bool(assignment_id),  
@@ -631,6 +632,7 @@ class StartTestExecution(APIView):
                 {"error": f"Failed to initialize test execution: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
 
 class AuthUserView(APIView):
     permission_classes = [IsAuthenticated]
